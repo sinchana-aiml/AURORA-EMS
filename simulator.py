@@ -338,6 +338,84 @@ def energy_balance_step(
     }
 
 
+# ── 7. MULTI-HOUR SIMULATION LOOP ─────────────────────────────────────────────
+
+def make_test_weather(hours=24):
+    """
+    Returns a deterministic list of hourly weather dicts for prototype testing.
+    NOT real weather data -- values are hand-crafted to exercise all dispatch paths.
+
+    Pattern (repeating every 24 h):
+      Hours  0-5  : night, calm      -- no solar, low wind
+      Hours  6-11 : morning sun, wind picking up
+      Hours 12-17 : peak sun, strong wind
+      Hours 18-23 : evening, wind dropping, no solar
+    """
+    records = []
+    for h in range(hours):
+        hour_of_day = h % 24
+        if hour_of_day < 6:                          # night
+            irr, wind, temp = 0,   2.0,  -25.0
+        elif hour_of_day < 12:                       # morning
+            irr, wind, temp = 400, 8.0,  -20.0
+        elif hour_of_day < 18:                       # midday
+            irr, wind, temp = 900, 14.0, -15.0
+        else:                                        # evening
+            irr, wind, temp = 50,  5.0,  -18.0
+        records.append({
+            "timestamp":      f"2024-07-01T{hour_of_day:02d}:00",
+            "temperature_c":  temp,
+            "irradiance_w_m2": irr,
+            "wind_speed_ms":  wind,
+        })
+    return records
+
+
+def run_simulation(
+    weather_records,
+    initial_soc_kwh,
+    initial_fuel_litres,
+    generator_1_available=True,
+    generator_2_available=True,
+):
+    """
+    Runs the digital twin for every record in weather_records.
+
+    State carried between hours:
+      - battery_soc_kwh      : taken from previous hour's returned battery_soc_kwh
+      - fuel_remaining_litres: taken from previous hour's returned fuel_remaining_litres
+
+    Both start at the supplied initial values and are NEVER reset inside the loop.
+
+    Returns a list of result dicts, one per hour, each containing the
+    input timestamp plus all fields returned by energy_balance_step.
+    """
+    soc_kwh  = initial_soc_kwh
+    fuel_l   = initial_fuel_litres
+    results  = []
+
+    for rec in weather_records:
+        # Run one hour of the energy balance using current state
+        r = energy_balance_step(
+            temperature_c         = rec["temperature_c"],
+            irradiance_w_m2       = rec["irradiance_w_m2"],
+            wind_speed_ms         = rec["wind_speed_ms"],
+            battery_soc_kwh       = soc_kwh,
+            fuel_remaining_litres = fuel_l,
+            generator_1_available = generator_1_available,
+            generator_2_available = generator_2_available,
+        )
+        # Carry state forward to the next hour
+        soc_kwh = r["battery_soc_kwh"]
+        fuel_l  = r["fuel_remaining_litres"]
+
+        # Attach the timestamp and store
+        r["timestamp"] = rec["timestamp"]
+        results.append(r)
+
+    return results
+
+
 # ── Quick self-test ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # --- Load calculator test (unchanged) ---
@@ -531,3 +609,102 @@ if __name__ == "__main__":
     print("  gen_to_battery_charge_kw = 19.00 kW (grid side), SOC gains 19*0.95 kWh")
     print("  LHS = 0 + 20 + 60        = 80.00 kW")
     print("  RHS = 61 + 19 + 0        = 80.00 kW  PASS")
+
+    # --- 24-hour simulation tests ---
+    INIT_FUEL = config.FUEL_TANK_LITRES
+    INIT_SOC2 = config.BATTERY_CAPACITY_KWH * config.BATTERY_INITIAL_SOC_FRACTION
+    weather   = make_test_weather(24)
+
+    print()
+    print("=" * 70)
+    print("  24-HOUR SIMULATION -- normal scenario (both generators available)")
+    print("=" * 70)
+    sim_normal = run_simulation(weather, INIT_SOC2, INIT_FUEL)
+
+    # Print hourly table
+    print(f"{'Hour':<6} {'Timestamp':<18} {'Temp':>6} {'Solar':>7} {'Wind':>7} "
+          f"{'Load':>7} {'SOC':>8} {'Fuel':>8} {'Unmet':>7}")
+    print("-" * 80)
+    for r in sim_normal:
+        print(f"  {r['timestamp']:<18} {r['temperature_c']:>6.1f} "
+              f"{r['solar_power_kw']:>7.2f} {r['wind_power_kw']:>7.2f} "
+              f"{r['total_load_kw']:>7.2f} {r['battery_soc_kwh']:>8.2f} "
+              f"{r['fuel_remaining_litres']:>8.2f} {r['unmet_load_kw']:>7.2f}")
+
+    final_normal = sim_normal[-1]
+    print()
+    print(f"  Final SOC  : {final_normal['battery_soc_kwh']} kWh")
+    print(f"  Final fuel : {final_normal['fuel_remaining_litres']} L")
+    print(f"  Fuel used  : {round(INIT_FUEL - final_normal['fuel_remaining_litres'], 4)} L")
+
+    # --- Automated checks ---
+    print()
+    print("Simulation checks:")
+
+    # Check 1: exactly 24 rows
+    ok1 = len(sim_normal) == 24
+    print(f"  [{'PASS' if ok1 else 'FAIL'}] Exactly 24 output rows: {len(sim_normal)}")
+
+    # Check 2: timestamps preserved in order
+    ts_list = [r["timestamp"] for r in sim_normal]
+    ok2 = ts_list == sorted(ts_list)
+    print(f"  [{'PASS' if ok2 else 'FAIL'}] Timestamps in order")
+
+    # Check 3: SOC continuity -- each hour's SOC must equal the previous
+    # hour's SOC adjusted by net energy flows (all on the bus side, kWh).
+    # net_change = energy_in - energy_out
+    #   energy_in  = battery_charge_kw * 1h  (already includes gen_to_batt)
+    #              converted to SOC: * CHARGE_EFF
+    #   energy_out = battery_discharge_kw * 1h / DISCHARGE_EFF  (more leaves battery)
+    # But battery_charge_kw is the BUS-side power; SOC gain = charge_kw * eff
+    # battery_discharge_kw is BUS-side power delivered; SOC loss = discharge_kw / eff
+    soc_continuous = True
+    eff_c = config.BATTERY_CHARGE_EFFICIENCY
+    eff_d = config.BATTERY_DISCHARGE_EFFICIENCY
+    for i in range(1, len(sim_normal)):
+        prev  = sim_normal[i-1]["battery_soc_kwh"]
+        r     = sim_normal[i]
+        expected = round(prev
+                         + r["battery_charge_kw"]    * eff_c
+                         - r["battery_discharge_kw"] / eff_d, 2)
+        actual   = round(r["battery_soc_kwh"], 2)
+        if abs(actual - expected) > 0.05:   # 0.05 kWh tolerance for rounding
+            soc_continuous = False
+            break
+    print(f"  [{'PASS' if soc_continuous else 'FAIL'}] SOC continuity between hours")
+
+    # Check 4: fuel never increases
+    fuel_monotone = all(
+        sim_normal[i]["fuel_remaining_litres"] <= sim_normal[i-1]["fuel_remaining_litres"]
+        for i in range(1, len(sim_normal))
+    )
+    print(f"  [{'PASS' if fuel_monotone else 'FAIL'}] Fuel never increases")
+
+    # Check 5: no unmet load in normal scenario
+    no_unmet = all(r["unmet_load_kw"] == 0.0 for r in sim_normal)
+    print(f"  [{'PASS' if no_unmet else 'FAIL'}] No unmet load in normal scenario")
+
+    # --- Generator-failure scenario ---
+    print()
+    print("=" * 70)
+    print("  24-HOUR SIMULATION -- G1 failure scenario")
+    print("=" * 70)
+    sim_g1fail = run_simulation(weather, INIT_SOC2, INIT_FUEL,
+                                generator_1_available=False)
+
+    print(f"{'Hour':<6} {'Timestamp':<18} {'G1 kW':>7} {'G2 kW':>7} "
+          f"{'SOC':>8} {'Fuel':>8} {'Unmet':>7}")
+    print("-" * 65)
+    for r in sim_g1fail:
+        print(f"  {r['timestamp']:<18} {r['generator_1_power_kw']:>7.2f} "
+              f"{r['generator_2_power_kw']:>7.2f} {r['battery_soc_kwh']:>8.2f} "
+              f"{r['fuel_remaining_litres']:>8.2f} {r['unmet_load_kw']:>7.2f}")
+
+    final_fail = sim_g1fail[-1]
+    print()
+    print(f"  Final SOC  : {final_fail['battery_soc_kwh']} kWh")
+    print(f"  Final fuel : {final_fail['fuel_remaining_litres']} L")
+
+    # Check 6: G1 always zero in failure scenario
+    ok6 = all(r["generator_1_power_kw"] == 0.0 for r in sim_g1fail)
+    print(f"  [{'PASS' if ok6 else 'FAIL'}] G1 output is 0 in all hours of failure scenario")
