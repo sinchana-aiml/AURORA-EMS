@@ -16,44 +16,48 @@ LONGITUDE =  76.1956
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Fetch weather from NASA POWER
+# Fetch weather from NASA POWER — one year at a time
 # ─────────────────────────────────────────────────────────────────────────────
-url = "https://power.larc.nasa.gov/api/temporal/hourly/point"
+url   = "https://power.larc.nasa.gov/api/temporal/hourly/point"
+YEARS = range(2015, 2025)  # 2015 to 2024 inclusive
 
-params = {
-    "parameters": "T2M,WS10M,ALLSKY_SFC_SW_DWN,PRECTOTCORR,PS",
-    "community": "RE",
-    "longitude": LONGITUDE,
-    "latitude": LATITUDE,
-    "start": "20150101",
-    "end": "20150107",   # 7-day test — change to "20241231" for full run
-    "format": "JSON",
-    "time-standard": "UTC",
-}
+yearly_frames = []
 
-response = requests.get(url, params=params)
-print("Status:", response.status_code)
-response.raise_for_status()
+for year in YEARS:
+    print(f"Fetching {year}...")
 
-data = response.json()
-print("NASA POWER API connection successful!")
+    params = {
+        "parameters": "T2M,WS10M,ALLSKY_SFC_SW_DWN,PRECTOTCORR,PS",
+        "community": "RE",
+        "longitude": LONGITUDE,
+        "latitude": LATITUDE,
+        "start": f"{year}0101",
+        "end": f"{year}1231",
+        "format": "JSON",
+        "time-standard": "UTC",
+    }
 
+    response = requests.get(url, params=params, timeout=120)
+    response.raise_for_status()
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Build DataFrame
-# ─────────────────────────────────────────────────────────────────────────────
-parameters = data["properties"]["parameter"]
-df = pd.DataFrame(parameters)
+    year_data   = response.json()
+    year_params = year_data["properties"]["parameter"]
+    year_df     = pd.DataFrame(year_params)
+    yearly_frames.append(year_df)
+    print(f"  {year}: {len(year_df)} rows")
+
+print("\nAll years fetched. Combining...")
+df = pd.concat(yearly_frames)
 
 df.index = pd.to_datetime(df.index, format="%Y%m%d%H", utc=True)
 df.index.name = "timestamp_utc"
 
 df = df.rename(columns={
-    "T2M":             "temperature_c",
-    "WS10M":           "wind_speed_mps",
+    "T2M":               "temperature_c",
+    "WS10M":             "wind_speed_mps",
     "ALLSKY_SFC_SW_DWN": "solar_irradiance_wm2",
-    "PRECTOTCORR":     "precipitation_mm",
-    "PS":              "surface_pressure_kpa",
+    "PRECTOTCORR":       "precipitation_mm",
+    "PS":                "surface_pressure_kpa",
 })
 
 
@@ -81,7 +85,7 @@ print("Solar irradiance:", invalid_solar.sum())
 print("Precipitation:",    invalid_precipitation.sum())
 print("Surface pressure:", invalid_pressure.sum())
 
-time_diff = df.index.to_series().diff().dropna()
+time_diff  = df.index.to_series().diff().dropna()
 non_hourly = (time_diff != pd.Timedelta(hours=1)).sum()
 print("\nNon-hourly timestamp gaps:", non_hourly)
 
@@ -113,13 +117,11 @@ print(df["weather_quality_flag"].value_counts())
 # Formula:  P_pv = (G / 1000) * A_panel * eta * (1 + gamma * (T - 25))
 #
 # Assumptions:
-#   - Panel area is inferred from rated capacity and efficiency:
+#   - Panel area inferred from rated capacity and efficiency:
 #     A_panel = SOLAR_CAPACITY_KW * 1000 / (1000 * SOLAR_EFFICIENCY)
-#     i.e. area that produces rated kW at 1000 W/m² reference irradiance
-#   - Ambient temperature is used as a proxy for module temperature.
-#     This is a simplifying assumption; real module temperature is higher.
-#   - Temperature coefficient applies relative to 25 °C STC reference.
-#   - Output is clipped to [0, SOLAR_CAPACITY_KW].
+#   - Ambient temperature used as proxy for module temperature (simplification)
+#   - Temperature coefficient applied relative to 25 °C STC reference
+#   - Output clipped to [0, SOLAR_CAPACITY_KW]
 # ─────────────────────────────────────────────────────────────────────────────
 panel_area_m2 = (config.SOLAR_CAPACITY_KW * 1000) / (1000 * config.SOLAR_EFFICIENCY)
 
@@ -128,7 +130,8 @@ pv_raw = (
     * panel_area_m2
     * config.SOLAR_EFFICIENCY
     * (1 + config.SOLAR_TEMP_COEFF * (df["temperature_c"] - 25))
-) / 1000  # W → kW
+)
+
 
 df["pv_available_kw"] = pv_raw.clip(lower=0, upper=config.SOLAR_CAPACITY_KW)
 
@@ -137,12 +140,12 @@ df["pv_available_kw"] = pv_raw.clip(lower=0, upper=config.SOLAR_CAPACITY_KW)
 # Wind available power  (derived — NOT measured)
 #
 # Assumed generic cubic power curve:
-#   - below cut-in speed          → 0 kW
-#   - cut-in to rated speed       → cubic interpolation (v³ scaling)
-#   - rated speed to cut-out      → rated capacity
-#   - above cut-out speed         → 0 kW  (turbine shuts down for safety)
+#   - below cut-in speed     → 0 kW
+#   - cut-in to rated speed  → cubic interpolation
+#   - rated to cut-out       → rated capacity
+#   - above cut-out          → 0 kW (turbine shuts down for safety)
 #
-# This is NOT a manufacturer power curve. It is a standard assumed model.
+# This is NOT a manufacturer curve. It is a standard assumed model.
 # ─────────────────────────────────────────────────────────────────────────────
 v     = df["wind_speed_mps"]
 v_in  = config.WIND_CUT_IN_MS
@@ -151,13 +154,10 @@ v_out = config.WIND_CUT_OUT_MS
 P_r   = config.WIND_CAPACITY_KW
 
 wind_power = pd.Series(0.0, index=df.index)
+ramp_mask  = (v >= v_in) & (v < v_r)
+rated_mask = (v >= v_r)  & (v <= v_out)
 
-# Cubic ramp between cut-in and rated
-ramp_mask = (v >= v_in) & (v < v_r)
-wind_power[ramp_mask] = P_r * ((v[ramp_mask] - v_in) / (v_r - v_in)) ** 3
-
-# Flat rated output between rated and cut-out
-rated_mask = (v >= v_r) & (v <= v_out)
+wind_power[ramp_mask]  = P_r * ((v[ramp_mask] - v_in) / (v_r - v_in)) ** 3
 wind_power[rated_mask] = P_r
 
 df["wind_available_kw"] = wind_power
@@ -173,7 +173,7 @@ df["scenario_name"]  = "baseline"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Reorder columns to match the canonical schema
+# Canonical column order
 # ─────────────────────────────────────────────────────────────────────────────
 df = df[[
     "latitude",
