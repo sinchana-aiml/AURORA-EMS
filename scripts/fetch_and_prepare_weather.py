@@ -51,6 +51,7 @@ df = pd.concat(yearly_frames)
 
 df.index = pd.to_datetime(df.index, format="%Y%m%d%H", utc=True)
 df.index.name = "timestamp_utc"
+df = df.sort_index()
 
 df = df.rename(columns={
     "T2M":               "temperature_c",
@@ -89,6 +90,30 @@ time_diff  = df.index.to_series().diff().dropna()
 non_hourly = (time_diff != pd.Timedelta(hours=1)).sum()
 print("\nNon-hourly timestamp gaps:", non_hourly)
 
+expected_index     = pd.date_range(
+    start="2015-01-01 00:00:00+00:00",
+    end="2024-12-31 23:00:00+00:00",
+    freq="h",
+)
+missing_timestamps = expected_index.difference(df.index)
+extra_timestamps   = df.index.difference(expected_index)
+
+print("Expected rows:     ", len(expected_index))
+print("Actual rows:       ", len(df))
+print("Missing timestamps:", len(missing_timestamps))
+print("Extra timestamps:  ", len(extra_timestamps))
+
+if duplicate_count != 0:
+    raise ValueError("Duplicate timestamps detected.")
+if len(missing_timestamps) != 0:
+    raise ValueError("Missing timestamps detected.")
+if len(extra_timestamps) != 0:
+    raise ValueError("Unexpected timestamps detected.")
+if non_hourly != 0:
+    raise ValueError("Non-hourly timestamp gap detected.")
+
+print("\nAll validation checks passed.")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Weather quality flag
@@ -114,7 +139,7 @@ print(df["weather_quality_flag"].value_counts())
 # ─────────────────────────────────────────────────────────────────────────────
 # PV available power  (derived — NOT measured)
 #
-# Formula:  P_pv = (G / 1000) * A_panel * eta * (1 + gamma * (T - 25))
+# Formula:  P_pv = (G / 1000) * panel_area * efficiency * (1 + gamma * (T - 25))
 #
 # Assumptions:
 #   - Panel area inferred from rated capacity and efficiency:
@@ -132,20 +157,17 @@ pv_raw = (
     * (1 + config.SOLAR_TEMP_COEFF * (df["temperature_c"] - 25))
 )
 
-
 df["pv_available_kw"] = pv_raw.clip(lower=0, upper=config.SOLAR_CAPACITY_KW)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Wind available power  (derived — NOT measured)
 #
-# Assumed generic cubic power curve:
+# Assumed generic cubic power curve (NOT a manufacturer curve):
 #   - below cut-in speed     → 0 kW
 #   - cut-in to rated speed  → cubic interpolation
 #   - rated to cut-out       → rated capacity
 #   - above cut-out          → 0 kW (turbine shuts down for safety)
-#
-# This is NOT a manufacturer curve. It is a standard assumed model.
 # ─────────────────────────────────────────────────────────────────────────────
 v     = df["wind_speed_mps"]
 v_in  = config.WIND_CUT_IN_MS
@@ -195,8 +217,17 @@ df = df[[
 # Save canonical dataset
 # ─────────────────────────────────────────────────────────────────────────────
 output_path = os.path.join(os.path.dirname(__file__), "..", "data", "polar_weather_clean.csv")
-df.to_csv(output_path)
+df.to_csv(output_path, index=True)
 print("\nSaved:", os.path.normpath(output_path))
+
+check = pd.read_csv(output_path, parse_dates=["timestamp_utc"])
+assert len(check) == 87672
+assert check["timestamp_utc"].duplicated().sum() == 0
+assert check["weather_source"].eq("NASA_POWER").all()
+assert check["scenario_name"].eq("baseline").all()
+assert check["pv_available_kw"].between(0, config.SOLAR_CAPACITY_KW).all()
+assert check["wind_available_kw"].between(0, config.WIND_CAPACITY_KW).all()
+print("CSV verification passed.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
