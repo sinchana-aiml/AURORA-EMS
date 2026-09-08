@@ -22,12 +22,21 @@ WIND_CUT_IN_MS      = 3.0   # Minimum wind speed to generate (m/s)
 WIND_RATED_MS       = 12.0  # Wind speed at rated output (m/s)
 WIND_CUT_OUT_MS     = 25.0  # Wind speed above which turbine shuts down (m/s)
 
-# ── Diesel generators (two identical units) ───────────────────────────────────
-NUM_GENERATORS      = 2
-GEN_RATED_KW        = 60.0  # Rated output per generator (kW)
-GEN_MIN_LOAD_FRAC   = 0.30  # Minimum load fraction (30 % of rated)
-GEN_FUEL_RATE_L_KWH = 0.28  # Fuel consumption (litres per kWh generated)
-FUEL_TANK_LITRES    = 5000.0 # Total diesel fuel available (litres)
+# ── Diesel generators ────────────────────────────────────────────────────────
+# Generator 1
+GENERATOR_1_RATED_KW      = 80.0   # Maximum output (kW)
+GENERATOR_1_MINIMUM_KW    = 20.0   # Minimum operating output (kW)
+GENERATOR_1_IDLE_FUEL_LPH = 3.0    # Fuel burned per hour just to keep running (L/h)
+GENERATOR_1_FUEL_PER_KWH  = 0.25   # Additional fuel per kWh generated (L/kWh)
+
+# Generator 2
+GENERATOR_2_RATED_KW      = 120.0  # Maximum output (kW)
+GENERATOR_2_MINIMUM_KW    = 30.0   # Minimum operating output (kW)
+GENERATOR_2_IDLE_FUEL_LPH = 4.0    # Fuel burned per hour just to keep running (L/h)
+GENERATOR_2_FUEL_PER_KWH  = 0.23   # Additional fuel per kWh generated (L/kWh)
+
+# Shared fuel tank
+FUEL_TANK_LITRES          = 5000.0 # Total diesel fuel available (litres)
 
 # ── Battery storage ───────────────────────────────────────────────────────────
 BATTERY_CAPACITY_KWH         = 300.0  # Total usable energy capacity (kWh)

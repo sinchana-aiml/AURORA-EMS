@@ -157,6 +157,69 @@ def battery_step(current_soc_kwh, requested_power_kw, timestep_hours=1.0):
     }
 
 
+# ── 5. DIESEL GENERATOR MODEL ───────────────────────────────────────────────
+
+# Map generator_id → its config constants (avoids long if/else chains later)
+_GEN_PARAMS = {
+    1: {
+        "rated_kw":      config.GENERATOR_1_RATED_KW,
+        "minimum_kw":    config.GENERATOR_1_MINIMUM_KW,
+        "idle_fuel_lph": config.GENERATOR_1_IDLE_FUEL_LPH,
+        "fuel_per_kwh":  config.GENERATOR_1_FUEL_PER_KWH,
+    },
+    2: {
+        "rated_kw":      config.GENERATOR_2_RATED_KW,
+        "minimum_kw":    config.GENERATOR_2_MINIMUM_KW,
+        "idle_fuel_lph": config.GENERATOR_2_IDLE_FUEL_LPH,
+        "fuel_per_kwh":  config.GENERATOR_2_FUEL_PER_KWH,
+    },
+}
+
+
+def generator_output_and_fuel(generator_id, requested_power_kw,
+                              available=True, timestep_hours=1.0):
+    """
+    Simulates one timestep of a diesel generator.
+
+    generator_id       : 1 or 2
+    requested_power_kw : how much power the station needs from this generator
+    available          : False if the generator has failed or is offline
+    timestep_hours     : length of this simulation step in hours
+
+    Returns a dict with:
+      actual_output_kw  : power actually produced (kW)
+      fuel_used_litres  : diesel consumed this timestep (litres)
+      status            : human-readable string describing generator state
+    """
+    p = _GEN_PARAMS[generator_id]
+
+    # Rule 1: generator is broken or switched off — produces nothing
+    if not available:
+        return {"actual_output_kw": 0.0, "fuel_used_litres": 0.0, "status": "unavailable"}
+
+    # Rule 2: no power requested — generator stays off
+    if requested_power_kw <= 0:
+        return {"actual_output_kw": 0.0, "fuel_used_litres": 0.0, "status": "off"}
+
+    # Rule 3: cap output at rated capacity
+    actual_output_kw = min(requested_power_kw, p["rated_kw"])
+
+    # Rule 4: diesel engines cannot run efficiently below a minimum load
+    #          if asked for less than minimum, run at minimum anyway
+    if actual_output_kw < p["minimum_kw"]:
+        actual_output_kw = p["minimum_kw"]
+
+    # Rule 5: fuel = idle burn (just to keep engine running) + load-dependent burn
+    fuel_used_litres = (p["idle_fuel_lph"] * timestep_hours
+                        + p["fuel_per_kwh"] * actual_output_kw * timestep_hours)
+
+    return {
+        "actual_output_kw": round(actual_output_kw, 4),
+        "fuel_used_litres": round(fuel_used_litres, 4),
+        "status":           "running",
+    }
+
+
 # ── Quick self-test ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # --- Load calculator test (unchanged) ---
@@ -226,3 +289,42 @@ if __name__ == "__main__":
         print(f"{label:<35} {soc_before:<12} {req:<14} "
               f"{result['new_soc_kwh']:<12} {result['actual_charge_kw']:<10} "
               f"{result['actual_discharge_kw']:<10} {expected_soc}")
+
+    # --- Generator test ---
+    print()
+    print("Generator 1  (rated=80 kW, min=20 kW, idle=3 L/h, 0.25 L/kWh)")
+    print(f"{'Test':<35} {'Req(kW)':<10} {'Out(kW)':<10} {'Fuel(L)':<10} {'Status':<14} {'Expected Out'}")
+    print("-" * 85)
+    gen1_cases = [
+        ("G1 off (0 kW)",          0,   0.0,   "off"),
+        ("G1 below min (10 kW)",   10,  20.0,  "running"),  # bumped to minimum
+        ("G1 normal (50 kW)",      50,  50.0,  "running"),
+        ("G1 over rated (100 kW)", 100, 80.0,  "running"),  # capped at rated
+        ("G1 unavailable (50 kW)", 50,  0.0,   "unavailable"),
+    ]
+    for label, req, exp_out, exp_status in gen1_cases:
+        unavail = (exp_status == "unavailable")
+        r = generator_output_and_fuel(1, req, available=not unavail)
+        print(f"{label:<35} {req:<10} {r['actual_output_kw']:<10} {r['fuel_used_litres']:<10} {r['status']:<14} {exp_out}")
+
+    # Fuel calculation walkthrough for G1 at 50 kW
+    print()
+    print("Fuel check — G1 at 50 kW for 1 hour:")
+    print("  idle_fuel  = 3.0 L/h x 1 h          =  3.00 L")
+    print("  load_fuel  = 0.25 L/kWh x 50 kW x 1h = 12.50 L")
+    print("  total_fuel = 3.00 + 12.50             = 15.50 L")
+    r_check = generator_output_and_fuel(1, 50)
+    print(f"  Actual result from function           = {r_check['fuel_used_litres']} L")
+
+    print()
+    print("Generator 2  (rated=120 kW, min=30 kW, idle=4 L/h, 0.23 L/kWh)")
+    print(f"{'Test':<35} {'Req(kW)':<10} {'Out(kW)':<10} {'Fuel(L)':<10} {'Status':<14} {'Expected Out'}")
+    print("-" * 85)
+    gen2_cases = [
+        ("G2 below min (20 kW)",   20,  30.0,  "running"),  # bumped to minimum
+        ("G2 normal (60 kW)",      60,  60.0,  "running"),
+        ("G2 over rated (200 kW)", 200, 120.0, "running"),  # capped at rated
+    ]
+    for label, req, exp_out, exp_status in gen2_cases:
+        r = generator_output_and_fuel(2, req)
+        print(f"{label:<35} {req:<10} {r['actual_output_kw']:<10} {r['fuel_used_litres']:<10} {r['status']:<14} {exp_out}")
