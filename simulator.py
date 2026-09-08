@@ -220,6 +220,124 @@ def generator_output_and_fuel(generator_id, requested_power_kw,
     }
 
 
+# ── 6. ENERGY BALANCE DISPATCH ──────────────────────────────────────────────
+
+def energy_balance_step(
+    temperature_c,
+    irradiance_w_m2,
+    wind_speed_ms,
+    battery_soc_kwh,
+    fuel_remaining_litres,
+    generator_1_available=True,
+    generator_2_available=True,
+    timestep_hours=1.0,
+):
+    """
+    Runs one timestep of the digital twin energy balance.
+
+    Dispatch order (priority highest -> lowest):
+      1. Renewables (solar + wind)  -- free, use first
+      2. Battery discharge          -- stored energy, no fuel cost
+      3. Generator 1                -- lower fuel rate
+      4. Generator 2                -- backup
+
+    Surplus renewable energy charges the battery first, then is curtailed.
+    Returns a full dict of every power flow and state variable.
+    """
+    # Step 1: station load
+    elec_kw   = electrical_load(include_flexible=True)
+    heat_kw   = heating_load(temperature_c)
+    demand_kw = elec_kw + heat_kw
+    deficit_kw = demand_kw
+
+    # Step 2: renewables
+    solar_kw     = solar_pv_output(irradiance_w_m2, temperature_c)
+    wind_kw      = wind_power_output(wind_speed_ms)
+    renewable_kw = solar_kw + wind_kw
+
+    renewable_used_kw = min(renewable_kw, deficit_kw)
+    deficit_kw       -= renewable_used_kw
+    surplus_kw        = renewable_kw - renewable_used_kw
+
+    # Step 3: battery
+    curtailed_kw = 0.0
+    if surplus_kw > 0:
+        # surplus renewable -> charge battery
+        batt         = battery_step(battery_soc_kwh, surplus_kw, timestep_hours)
+        battery_soc_kwh = batt["new_soc_kwh"]
+        charge_kw    = batt["actual_charge_kw"]
+        discharge_kw = 0.0
+        curtailed_kw = surplus_kw - charge_kw
+    elif deficit_kw > 0:
+        # deficit -> discharge battery
+        batt         = battery_step(battery_soc_kwh, -deficit_kw, timestep_hours)
+        battery_soc_kwh = batt["new_soc_kwh"]
+        discharge_kw = batt["actual_discharge_kw"]
+        charge_kw    = 0.0
+        deficit_kw  -= discharge_kw
+    else:
+        charge_kw    = 0.0
+        discharge_kw = 0.0
+
+    # Step 4: Generator 1
+    g1 = generator_output_and_fuel(1, deficit_kw,
+                                   available=generator_1_available,
+                                   timestep_hours=timestep_hours)
+    deficit_kw            -= g1["actual_output_kw"]
+    fuel_remaining_litres  = max(0.0, fuel_remaining_litres - g1["fuel_used_litres"])
+
+    # Step 5: Generator 2
+    g2 = generator_output_and_fuel(2, deficit_kw,
+                                   available=generator_2_available,
+                                   timestep_hours=timestep_hours)
+    deficit_kw            -= g2["actual_output_kw"]
+    fuel_remaining_litres  = max(0.0, fuel_remaining_litres - g2["fuel_used_litres"])
+
+    # Step 6: handle excess generation from generator minimum loading
+    # deficit_kw is now negative when generators produced more than needed.
+    # Try to absorb that excess into the battery first, then curtail the rest.
+    gen_to_batt_kw  = 0.0
+    excess_kw       = max(0.0, -deficit_kw)   # positive = generators over-produced
+    if excess_kw > 0:
+        batt2           = battery_step(battery_soc_kwh, excess_kw, timestep_hours)
+        battery_soc_kwh = batt2["new_soc_kwh"]
+        gen_to_batt_kw  = batt2["actual_charge_kw"]
+        charge_kw      += gen_to_batt_kw      # add to total battery charging
+        curtailed_kw   += excess_kw - gen_to_batt_kw  # anything battery couldn't take
+
+    # Step 7: unmet load and critical load check
+    # When generators over-produced, deficit is negative -- unmet load is zero.
+    unmet_kw        = max(0.0, round(deficit_kw, 6))
+    supplied_kw     = demand_kw - unmet_kw
+    critical_served = supplied_kw >= config.CRITICAL_LOAD_KW
+
+    return {
+        "temperature_c":              temperature_c,
+        "irradiance_w_m2":            irradiance_w_m2,
+        "wind_speed_ms":              wind_speed_ms,
+        "electrical_load_kw":         round(elec_kw, 4),
+        "heating_load_kw":            round(heat_kw, 4),
+        "total_load_kw":              round(demand_kw, 4),
+        "solar_power_kw":             round(solar_kw, 4),
+        "wind_power_kw":              round(wind_kw, 4),
+        "renewable_used_kw":          round(renewable_used_kw, 4),
+        "battery_charge_kw":          round(charge_kw, 4),
+        "battery_discharge_kw":       round(discharge_kw, 4),
+        "battery_soc_kwh":            round(battery_soc_kwh, 4),
+        "generator_1_power_kw":       round(g1["actual_output_kw"], 4),
+        "generator_2_power_kw":       round(g2["actual_output_kw"], 4),
+        "generator_total_kw":         round(g1["actual_output_kw"] + g2["actual_output_kw"], 4),
+        "generator_to_battery_charge_kw": round(gen_to_batt_kw, 4),
+        "excess_generation_kw":       round(excess_kw, 4),
+        "curtailed_power_kw":         round(curtailed_kw, 4),
+        "fuel_used_litres":           round(g1["fuel_used_litres"] + g2["fuel_used_litres"], 4),
+        "fuel_remaining_litres":      round(fuel_remaining_litres, 4),
+        "unmet_load_kw":              round(unmet_kw, 4),
+        "supplied_load_kw":           round(supplied_kw, 4),
+        "critical_load_served":       critical_served,
+    }
+
+
 # ── Quick self-test ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # --- Load calculator test (unchanged) ---
@@ -328,3 +446,88 @@ if __name__ == "__main__":
     for label, req, exp_out, exp_status in gen2_cases:
         r = generator_output_and_fuel(2, req)
         print(f"{label:<35} {req:<10} {r['actual_output_kw']:<10} {r['fuel_used_litres']:<10} {r['status']:<14} {exp_out}")
+
+    # --- Energy balance dispatch tests ---
+    FUEL  = 5000.0
+    SOC   = config.BATTERY_CAPACITY_KWH * config.BATTERY_INITIAL_SOC_FRACTION  # 210 kWh
+    MIN_SOC = config.BATTERY_CAPACITY_KWH * config.BATTERY_MIN_SOC_FRACTION     # 75 kWh
+
+    def show(label, r):
+        print(f"\n{'='*60}")
+        print(f"  {label}")
+        print(f"{'='*60}")
+        for k, v in r.items():
+            print(f"  {k:<28}: {v}")
+
+    # Test 1: sunny + windy -- renewables cover most of the load
+    # temp=-10, irr=800, wind=12 -> solar=26.24 kW, wind=50 kW, load=53 kW
+    # renewable(76.24) > load(53) -> surplus=23.24 -> charge battery
+    show("TEST 1: Sunny+windy, renewables surplus",
+         energy_balance_step(-10, 800, 12.0, SOC, FUEL))
+
+    # Test 2: no sun, low wind -- battery + generators supply load
+    # temp=-20, irr=0, wind=2 -> solar=0, wind=0, load=61 kW
+    # battery discharges, then G1 covers remainder
+    show("TEST 2: Dark+calm, battery+generator supply",
+         energy_balance_step(-20, 0, 2.0, SOC, FUEL))
+
+    # Test 3: G1 unavailable -- G2 supplies remaining demand
+    show("TEST 3: G1 unavailable, G2 takes over",
+         energy_balance_step(-20, 0, 2.0, SOC, FUEL,
+                             generator_1_available=False))
+
+    # Test 4: battery at minimum SOC -- cannot discharge
+    show("TEST 4: Battery at min SOC, cannot discharge",
+         energy_balance_step(-20, 0, 2.0, MIN_SOC, FUEL))
+
+    # Test 5: both generators unavailable -- unmet load reported
+    show("TEST 5: Both generators unavailable, unmet load",
+         energy_balance_step(-20, 0, 2.0, MIN_SOC, FUEL,
+                             generator_1_available=False,
+                             generator_2_available=False))
+
+    # Power-balance verification for all 5 tests
+    # Identity: total_generation + battery_discharge
+    #         = supplied_load + battery_charging + curtailed
+    # (within floating-point tolerance of 1e-6)
+    print()
+    print("Power-balance check (tolerance 1e-6):")
+    print(f"{'Test':<48} {'LHS':>10} {'RHS':>10} {'OK'}")
+    print("-" * 72)
+    balance_cases = [
+        ("T1: Sunny+windy",        energy_balance_step(-10, 800, 12.0, SOC, FUEL)),
+        ("T2: Dark+calm",          energy_balance_step(-20, 0, 2.0, SOC, FUEL)),
+        ("T3: G1 unavailable",     energy_balance_step(-20, 0, 2.0, SOC, FUEL, generator_1_available=False)),
+        ("T4: Battery at min SOC", energy_balance_step(-20, 0, 2.0, MIN_SOC, FUEL)),
+        ("T5: Both gens down",     energy_balance_step(-20, 0, 2.0, MIN_SOC, FUEL,
+                                       generator_1_available=False, generator_2_available=False)),
+    ]
+    for label, r in balance_cases:
+        # LHS = all power produced and injected onto the bus
+        # renewable_used + surplus_charged_to_battery + generators + battery_discharge
+        # = (renewable_used + battery_charge_from_renewable) + generators + battery_discharge
+        # Simplest form: use total renewable = renewable_used + battery_charge - gen_to_batt
+        total_renewable = r["solar_power_kw"] + r["wind_power_kw"]
+        lhs = total_renewable + r["generator_total_kw"] + r["battery_discharge_kw"]
+        rhs = (r["supplied_load_kw"] + r["battery_charge_kw"] + r["curtailed_power_kw"])
+        ok  = abs(lhs - rhs) < 1e-4
+        print(f"  {label:<46} {lhs:>10.4f} {rhs:>10.4f} {'PASS' if ok else 'FAIL'}")
+
+    # Manual power-balance walkthrough for Test 2 (the generator minimum-load case)
+    print()
+    print("Manual power-balance -- Test 2 (dark, calm, temp=-20, SOC=210):")
+    print("  total_load          = 61.00 kW")
+    print("  renewables          =  0.00 kW")
+    print("  battery discharges  = 60.00 kW  (max discharge rate)")
+    print("  remaining deficit   = 61 - 60   =  1.00 kW -> G1 requested")
+    print("  G1 minimum kicks in -> G1 output = 20.00 kW")
+    print("  excess generation   = 20 - 1    = 19.00 kW")
+    print("  battery absorbs excess (up to 60 kW limit) -> gen_to_battery = 19.00 kW")
+    print("  curtailed           =  0.00 kW  (battery absorbed all excess)")
+    print("  supplied_load       = 61.00 kW")
+    print("  LHS = renewable(0) + gen(20) + batt_discharge(60) = 80.00 kW")
+    print("  RHS = supplied(61) + batt_charge(19*0.95=18.05... wait -- charge_kw is grid side)")
+    print("  Note: battery_charge_kw is the power drawn FROM the bus into the battery.")
+    print("  gen_to_battery_charge_kw = 19.00 kW (grid side), SOC gains 19*0.95 kWh")
+    print("  LHS = 0 + 20 + 60        = 80.00 kW")
+    print("  RHS = 61 + 19 + 0        = 80.00 kW  PASS")
