@@ -6,7 +6,8 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Simulation time ───────────────────────────────────────────────────────────
-TIMESTEP_HOURS = 1          # Each simulation step represents 1 hour
+TIMESTEP_HOURS             = 1    # Each simulation step represents 1 hour
+SIMULATION_TIMESTEP_HOURS  = 1.0  # Floating-point timestep used by battery model
 
 # ── Solar PV array ────────────────────────────────────────────────────────────
 SOLAR_CAPACITY_KW        = 40.0    # Rated peak output (kW)
@@ -29,13 +30,13 @@ GEN_FUEL_RATE_L_KWH = 0.28  # Fuel consumption (litres per kWh generated)
 FUEL_TANK_LITRES    = 5000.0 # Total diesel fuel available (litres)
 
 # ── Battery storage ───────────────────────────────────────────────────────────
-BATTERY_CAPACITY_KWH  = 200.0  # Usable energy capacity (kWh)
-BATTERY_MAX_SOC       = 1.00   # Maximum state of charge (100 %)
-BATTERY_MIN_SOC       = 0.20   # Minimum reserve — never discharge below this
-BATTERY_CHARGE_EFF    = 0.95   # Charging efficiency (95 %)
-BATTERY_DISCHARGE_EFF = 0.95   # Discharging efficiency (95 %)
-BATTERY_MAX_RATE_KW   = 50.0   # Maximum charge/discharge power (kW)
-BATTERY_INITIAL_SOC   = 0.80   # Starting SOC for simulation (80 %)
+BATTERY_CAPACITY_KWH         = 300.0  # Total usable energy capacity (kWh)
+BATTERY_MAX_CHARGE_KW        = 60.0   # Maximum charging power (kW)
+BATTERY_MAX_DISCHARGE_KW     = 60.0   # Maximum discharging power (kW)
+BATTERY_CHARGE_EFFICIENCY    = 0.95   # Charging efficiency (95 %)
+BATTERY_DISCHARGE_EFFICIENCY = 0.95   # Discharging efficiency (95 %)
+BATTERY_MIN_SOC_FRACTION     = 0.25   # Minimum SOC — never discharge below 25 %
+BATTERY_INITIAL_SOC_FRACTION = 0.70   # Starting SOC for simulation (70 %)
 
 # ── Station electrical loads ──────────────────────────────────────────────────
 BASE_LOAD_KW          = 20.0   # Always-on critical systems (kW)

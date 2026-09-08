@@ -97,6 +97,66 @@ def wind_power_output(wind_speed_ms):
     return config.WIND_CAPACITY_KW  # kW
 
 
+# ── 4. BATTERY ENERGY STORAGE ───────────────────────────────────────────────
+
+def battery_step(current_soc_kwh, requested_power_kw, timestep_hours=1.0):
+    """
+    Simulates one timestep of battery charging or discharging.
+
+    current_soc_kwh    : energy currently stored in the battery (kWh)
+    requested_power_kw : positive = charge, negative = discharge, 0 = idle
+    timestep_hours     : length of this simulation step in hours
+
+    Returns a dict with:
+      new_soc_kwh        : battery energy level after this step (kWh)
+      actual_charge_kw   : power actually charged (kW), 0 if discharging
+      actual_discharge_kw: power actually discharged (kW), 0 if charging
+    """
+    # Derived limits from config
+    min_soc_kwh = config.BATTERY_CAPACITY_KWH * config.BATTERY_MIN_SOC_FRACTION  # 75 kWh
+    max_soc_kwh = config.BATTERY_CAPACITY_KWH                                     # 300 kWh
+
+    actual_charge_kw    = 0.0
+    actual_discharge_kw = 0.0
+    new_soc_kwh         = current_soc_kwh
+
+    if requested_power_kw > 0:
+        # ── CHARGING ───────────────────────────────────────────────────────────
+        # Step 1: cap charging power at the hardware limit
+        charge_kw = min(requested_power_kw, config.BATTERY_MAX_CHARGE_KW)
+
+        # Step 2: energy that would enter the battery after efficiency loss
+        energy_in_kwh = charge_kw * timestep_hours * config.BATTERY_CHARGE_EFFICIENCY
+
+        # Step 3: don't overfill — only charge as much as the battery can hold
+        energy_in_kwh = min(energy_in_kwh, max_soc_kwh - current_soc_kwh)
+
+        # Step 4: back-calculate the actual grid power drawn for charging
+        actual_charge_kw = energy_in_kwh / (timestep_hours * config.BATTERY_CHARGE_EFFICIENCY)
+        new_soc_kwh      = current_soc_kwh + energy_in_kwh
+
+    elif requested_power_kw < 0:
+        # ── DISCHARGING ─────────────────────────────────────────────────────────
+        # Step 1: cap discharge power at the hardware limit (work with positive numbers)
+        discharge_kw = min(-requested_power_kw, config.BATTERY_MAX_DISCHARGE_KW)
+
+        # Step 2: energy that would leave the battery (efficiency means more leaves than delivered)
+        energy_out_kwh = discharge_kw * timestep_hours / config.BATTERY_DISCHARGE_EFFICIENCY
+
+        # Step 3: don't over-drain — only discharge down to the minimum reserve
+        energy_out_kwh = min(energy_out_kwh, current_soc_kwh - min_soc_kwh)
+
+        # Step 4: back-calculate the actual power delivered to the grid
+        actual_discharge_kw = energy_out_kwh * config.BATTERY_DISCHARGE_EFFICIENCY / timestep_hours
+        new_soc_kwh         = current_soc_kwh - energy_out_kwh
+
+    return {
+        "new_soc_kwh":         round(new_soc_kwh, 4),
+        "actual_charge_kw":    round(actual_charge_kw, 4),
+        "actual_discharge_kw": round(actual_discharge_kw, 4),
+    }
+
+
 # ── Quick self-test ───────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # --- Load calculator test (unchanged) ---
@@ -140,3 +200,29 @@ if __name__ == "__main__":
     for speed, expected in wind_cases:
         result = wind_power_output(speed)
         print(f"{speed:<14} {result:<15.1f} {expected}")
+
+    # --- Battery test ---
+    INIT_SOC = config.BATTERY_CAPACITY_KWH * config.BATTERY_INITIAL_SOC_FRACTION  # 210 kWh
+    print()
+    print(f"Battery capacity: {config.BATTERY_CAPACITY_KWH} kWh  |  "
+          f"Min SOC: {config.BATTERY_CAPACITY_KWH * config.BATTERY_MIN_SOC_FRACTION} kWh  |  "
+          f"Initial SOC: {INIT_SOC} kWh")
+    print()
+    print(f"{'Test':<35} {'SOC before':<12} {'Request(kW)':<14} {'New SOC':<12} {'Chg kW':<10} {'Dis kW':<10} {'Expected SOC'}")
+    print("-" * 100)
+
+    battery_cases = [
+        ("No action",                   INIT_SOC,  0.0,    210.0),
+        ("Charge 40 kW x 1 h",          INIT_SOC,  40.0,   248.0),   # 210 + 40*0.95 = 248
+        ("Discharge 40 kW x 1 h",       INIT_SOC, -40.0,  167.895), # 210 - 40/0.95 = 167.895
+        ("Charge capped at 60 kW",      INIT_SOC,  100.0,  267.0),   # 210 + 60*0.95 = 267
+        ("Discharge capped at 60 kW",   INIT_SOC, -100.0, 146.842), # 210 - 60/0.95 = 146.842
+        ("SOC ceiling: charge near full", 295.0,   40.0,   300.0),   # cannot exceed 300
+        ("SOC floor: discharge near min",  80.0,  -40.0,    75.0),   # cannot go below 75
+    ]
+
+    for label, soc_before, req, expected_soc in battery_cases:
+        result = battery_step(soc_before, req)
+        print(f"{label:<35} {soc_before:<12} {req:<14} "
+              f"{result['new_soc_kwh']:<12} {result['actual_charge_kw']:<10} "
+              f"{result['actual_discharge_kw']:<10} {expected_soc}")
