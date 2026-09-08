@@ -9,9 +9,11 @@
 TIMESTEP_HOURS = 1          # Each simulation step represents 1 hour
 
 # ── Solar PV array ────────────────────────────────────────────────────────────
-SOLAR_CAPACITY_KW   = 30.0  # Rated peak output (kW)
-SOLAR_EFFICIENCY    = 0.18  # Panel efficiency (18 %)
-SOLAR_TEMP_COEFF    = -0.004 # Power loss per °C above 25 °C (fraction/°C)
+SOLAR_CAPACITY_KW        = 40.0    # Rated peak output (kW)
+SOLAR_REF_IRRADIANCE     = 1000.0  # Reference irradiance (W/m²)
+SOLAR_PERFORMANCE_RATIO  = 0.82    # System performance ratio (losses, wiring, etc.)
+SOLAR_TEMP_COEFF         = -0.004  # Power change per °C above reference (fraction/°C)
+SOLAR_REF_TEMP_C         = 25.0    # Reference cell temperature (°C)
 
 # ── Wind turbine ──────────────────────────────────────────────────────────────
 WIND_CAPACITY_KW    = 50.0  # Rated output at rated wind speed (kW)
