@@ -192,6 +192,10 @@ df["latitude"]       = LATITUDE
 df["longitude"]      = LONGITUDE
 df["weather_source"] = "NASA_POWER"
 df["scenario_name"]  = "baseline"
+df.loc[df["wind_speed_mps"] >= config.STORM_WIND_THRESHOLD_MS, "scenario_name"] = "storm"
+
+print("\nScenario summary:")
+print(df["scenario_name"].value_counts())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -224,7 +228,7 @@ check = pd.read_csv(output_path, parse_dates=["timestamp_utc"])
 assert len(check) == 87672
 assert check["timestamp_utc"].duplicated().sum() == 0
 assert check["weather_source"].eq("NASA_POWER").all()
-assert check["scenario_name"].eq("baseline").all()
+assert check["scenario_name"].isin(["baseline", "storm"]).all()
 assert check["pv_available_kw"].between(0, config.SOLAR_CAPACITY_KW).all()
 assert check["wind_available_kw"].between(0, config.WIND_CAPACITY_KW).all()
 print("CSV verification passed.")
