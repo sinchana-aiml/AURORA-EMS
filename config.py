@@ -62,3 +62,18 @@ CRITICAL_LOAD_KW      = BASE_LOAD_KW  # kW that must never be cut
 STORM_WIND_THRESHOLD_MS   = 20.0  # Wind speed that triggers storm scenario (m/s)
 LOW_FUEL_THRESHOLD_L      = 500.0 # Fuel level that triggers low-fuel alert (L)
 COMMS_OUTAGE_PROBABILITY  = 0.02  # 2 % chance per hour of comms outage
+
+# ── Compatibility aliases for Member 2 ───────────────────────────────────────
+# Maps Member 2's original variable names to Member 1's canonical constants.
+# Do not remove until Member 2's module is updated to use the new names.
+SOLAR_EFFICIENCY      = SOLAR_PERFORMANCE_RATIO
+NUM_GENERATORS        = 2
+GEN_RATED_KW          = GENERATOR_1_RATED_KW
+GEN_MIN_LOAD_FRAC     = GENERATOR_1_MINIMUM_KW / GENERATOR_1_RATED_KW
+GEN_FUEL_RATE_L_KWH   = GENERATOR_1_FUEL_PER_KWH
+BATTERY_MAX_SOC       = 1.00
+BATTERY_MIN_SOC       = BATTERY_MIN_SOC_FRACTION
+BATTERY_CHARGE_EFF    = BATTERY_CHARGE_EFFICIENCY
+BATTERY_DISCHARGE_EFF = BATTERY_DISCHARGE_EFFICIENCY
+BATTERY_MAX_RATE_KW   = BATTERY_MAX_CHARGE_KW
+BATTERY_INITIAL_SOC   = BATTERY_INITIAL_SOC_FRACTION
