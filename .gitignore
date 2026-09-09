@@ -1,3 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
+
+# Generated full weather export — regenerate with:
+#   python scripts/export_for_digital_twin.py
+data/digital_twin_weather_full.csv
