@@ -52,6 +52,7 @@ def get_demo_data(mode: str = "Summer") -> pd.DataFrame:
 
     data = pd.DataFrame(rows)
     data.attrs["battery_capacity_kwh"] = DEMO_BATTERY_CAPACITY_KWH
+    data.attrs["initial_fuel_litres"] = mode_settings["fuel"]
     return data
 
 
@@ -76,9 +77,12 @@ def render_dashboard(
     battery_capacity_kwh = data.attrs.get("battery_capacity_kwh", DEMO_BATTERY_CAPACITY_KWH)
     battery_soc_percent = current["battery_soc_kwh"] / battery_capacity_kwh * 100
     status, status_text = calculate_status(current, battery_capacity_kwh)
-    fuel_burn = data["fuel_litres"].iloc[0] - data["fuel_litres"].iloc[-1]
+    initial_fuel_litres = data.attrs.get("initial_fuel_litres", data["fuel_litres"].iloc[0])
+    fuel_burn = max(0.0, initial_fuel_litres - current["fuel_litres"])
     elapsed_hours = len(data) - 1
     fuel_days = None if fuel_burn <= 0 or elapsed_hours <= 0 else current["fuel_litres"] / (fuel_burn / elapsed_hours * 24)
+    total_generator_energy_kwh = data["generator_kw"].sum()
+    maximum_unmet_load_kw = data["unmet_load_kw"].max()
 
     st.title("AURORA-EMS — Polar Station Energy Dashboard")
     display_context = f"{mode} mode" if data_source == "Demo scenario" else "Digital Twin simulation"
@@ -98,21 +102,43 @@ def render_dashboard(
         st.error(status_text)
     st.caption("Status rules: NORMAL — Station operating normally · WARNING — Low fuel or low battery · CRITICAL — Unmet load detected")
 
+    st.subheader("Latest simulation hour")
     top_row = st.columns(4)
     top_row[0].metric("Current load", f"{current['load_kw']:.1f} kW")
     top_row[1].metric("Solar generation", f"{current['solar_kw']:.1f} kW")
     top_row[2].metric("Wind generation", f"{current['wind_kw']:.1f} kW")
     top_row[3].metric("Generator output", f"{current['generator_kw']:.1f} kW")
 
-    bottom_row = st.columns(4)
+    bottom_row = st.columns(2)
     bottom_row[0].metric("Battery SOC", f"{current['battery_soc_kwh']:.1f} kWh", f"{battery_soc_percent:.1f}%")
-    bottom_row[1].metric("Fuel remaining", f"{current['fuel_litres']:,.0f} litres")
-    bottom_row[2].metric("Unmet load", f"{current['unmet_load_kw']:.1f} kW")
-    bottom_row[3].metric("Estimated fuel days remaining", "N/A" if fuel_days is None else f"{fuel_days:.1f} days")
+    bottom_row[1].metric("Unmet load", f"{current['unmet_load_kw']:.1f} kW")
 
-    st.subheader("24-hour energy profile")
-    chart_data = data.set_index("timestamp")[["load_kw", "solar_kw", "wind_kw", "generator_kw", "battery_soc_kwh"]]
-    st.line_chart(chart_data, use_container_width=True)
+    st.subheader("Fuel outlook")
+    fuel_row = st.columns(2)
+    fuel_row[0].metric("Fuel remaining", f"{current['fuel_litres']:,.0f} litres")
+    fuel_row[1].metric("Estimated fuel days remaining", "N/A" if fuel_days is None else f"{fuel_days:.1f} days")
+
+    st.subheader("Simulation summary")
+    summary_top = st.columns(3)
+    summary_top[0].metric("Number of simulation hours", f"{len(data)}")
+    summary_top[1].metric("First timestamp", str(data["timestamp"].iloc[0]))
+    summary_top[2].metric("Last timestamp", str(data["timestamp"].iloc[-1]))
+    summary_bottom = st.columns(3)
+    summary_bottom[0].metric("Total generator energy", f"{total_generator_energy_kwh:.1f} kWh")
+    summary_bottom[1].metric("Total fuel used", f"{fuel_burn:.1f} litres")
+    summary_bottom[2].metric("Maximum unmet load", f"{maximum_unmet_load_kw:.1f} kW")
+
+    st.subheader("Energy profile (power in kW; Battery SOC in kWh)")
+    chart_data = data.set_index("timestamp")[["load_kw", "solar_kw", "wind_kw", "generator_kw", "battery_soc_kwh"]].rename(
+        columns={
+            "load_kw": "Load",
+            "solar_kw": "Solar",
+            "wind_kw": "Wind",
+            "generator_kw": "Generator",
+            "battery_soc_kwh": "Battery SOC",
+        }
+    )
+    st.line_chart(chart_data, width="stretch")
     if data_source == "Digital Twin + validated weather sample":
         st.caption("Power values are kW; battery state of charge is kWh. Readings are simulated Digital Twin output.")
     else:

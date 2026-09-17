@@ -11,3 +11,4 @@ def test_empty_fuel_adapter_uses_digital_twin_outputs():
     assert (data["fuel_litres"] == 0.0).all()
     assert (data["generator_kw"] == 0.0).all()
     assert (data["unmet_load_kw"] > 0.0).any()
+    assert data.attrs["initial_fuel_litres"] == 0.0

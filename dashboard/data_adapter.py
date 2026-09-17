@@ -71,4 +71,5 @@ def load_digital_twin_sample(initial_fuel_litres: float | None = None) -> pd.Dat
     )
     data["timestamp"] = pd.to_datetime(data["timestamp"], utc=True)
     data.attrs["battery_capacity_kwh"] = config.BATTERY_CAPACITY_KWH
+    data.attrs["initial_fuel_litres"] = initial_fuel
     return data
