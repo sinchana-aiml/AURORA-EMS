@@ -37,7 +37,7 @@ DASHBOARD_COLUMNS = [
 ]
 
 
-def load_digital_twin_sample() -> pd.DataFrame:
+def load_digital_twin_sample(initial_fuel_litres: float | None = None) -> pd.DataFrame:
     """Run the Twin against its validated NASA POWER 24-hour weather sample.
 
     Exceptions from loading, validation, or simulation deliberately reach the
@@ -47,10 +47,11 @@ def load_digital_twin_sample() -> pd.DataFrame:
     weather_records = load_weather_csv(SAMPLE_WEATHER_CSV)
     validate_weather_records(weather_records)
 
+    initial_fuel = config.FUEL_TANK_LITRES if initial_fuel_litres is None else initial_fuel_litres
     results = run_simulation(
         weather_records=weather_records,
         initial_soc_kwh=config.BATTERY_CAPACITY_KWH * config.BATTERY_INITIAL_SOC_FRACTION,
-        initial_fuel_litres=config.FUEL_TANK_LITRES,
+        initial_fuel_litres=initial_fuel,
     )
     if not results:
         raise ValueError("Digital Twin returned no simulation results.")

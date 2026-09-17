@@ -65,7 +65,12 @@ def calculate_status(current: pd.Series, battery_capacity_kwh: float) -> tuple[s
     return "NORMAL", "NORMAL — Station operating normally"
 
 
-def render_dashboard(data: pd.DataFrame, mode: str, data_source: str) -> None:
+def render_dashboard(
+    data: pd.DataFrame,
+    mode: str,
+    data_source: str,
+    empty_fuel_demonstration: bool = False,
+) -> None:
     """Render shared dashboard panels for demo data or Digital Twin output."""
     current = data.iloc[-1]
     battery_capacity_kwh = data.attrs.get("battery_capacity_kwh", DEMO_BATTERY_CAPACITY_KWH)
@@ -79,6 +84,8 @@ def render_dashboard(data: pd.DataFrame, mode: str, data_source: str) -> None:
     display_context = f"{mode} mode" if data_source == "Demo scenario" else "Digital Twin simulation"
     st.caption(f"{STATION_NAME} · {display_context} · {data_source}")
     st.warning("Station energy values are simulated for prototype demonstration.")
+    if empty_fuel_demonstration:
+        st.error("CRITICAL DEMONSTRATION — Fuel unavailable; generator output is limited by the Digital Twin.")
     if data_source == "Digital Twin + validated weather sample":
         st.caption("Weather input: validated NASA POWER sample; station energy response: simulated by the Digital Twin.")
         st.caption(f"First timestamp: {data['timestamp'].iloc[0]} · Last timestamp: {data['timestamp'].iloc[-1]}")
@@ -128,6 +135,12 @@ def main() -> None:
     st.sidebar.text_input("Station", value=STATION_NAME, disabled=True)
     data_source = st.sidebar.selectbox("Data source", ["Demo scenario", "Digital Twin + validated weather sample"])
     mode = st.sidebar.selectbox("Mode", ["Summer", "Winter", "Storm"])
+    digital_twin_scenario = "Normal fuel"
+    if data_source == "Digital Twin + validated weather sample":
+        digital_twin_scenario = st.sidebar.selectbox(
+            "Digital Twin scenario",
+            ["Normal fuel", "Empty fuel — critical demonstration"],
+        )
     st.sidebar.caption("Data label: Simulated station energy data")
     st.sidebar.caption("Weather source: NASA POWER Antarctic weather data (Digital Twin mode)")
     st.sidebar.divider()
@@ -137,12 +150,20 @@ def main() -> None:
         render_dashboard(get_demo_data(mode), mode, data_source)
         return
     try:
-        simulation_data = load_digital_twin_sample()
+        empty_fuel_demonstration = digital_twin_scenario == "Empty fuel — critical demonstration"
+        simulation_data = load_digital_twin_sample(
+            initial_fuel_litres=0.0 if empty_fuel_demonstration else None
+        )
     except Exception as error:
         st.error(f"Unable to load the validated weather sample or run the Digital Twin: {error}")
         st.info("Select 'Demo scenario' in the sidebar to use the local demonstration data explicitly.")
         return
-    render_dashboard(simulation_data, mode, data_source)
+    render_dashboard(
+        simulation_data,
+        mode,
+        data_source,
+        empty_fuel_demonstration=empty_fuel_demonstration,
+    )
 
 
 if __name__ == "__main__":
