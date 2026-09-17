@@ -122,6 +122,31 @@ class TestEnergyBalanceBothGensDown:
         assert power_balance_ok(self.r)
 
 
+class TestEnergyBalanceFuelDepletion:
+    """An empty or limited tank constrains generator dispatch."""
+
+    def test_empty_tank_generators_produce_no_power(self):
+        r = energy_balance_step(-20, 0, 2.0, MIN_SOC, 0.0)
+        assert r["generator_total_kw"] == 0.0
+
+    def test_empty_tank_uses_no_fuel(self):
+        r = energy_balance_step(-20, 0, 2.0, MIN_SOC, 0.0)
+        assert r["fuel_used_litres"] == 0.0
+
+    def test_empty_tank_remains_empty(self):
+        r = energy_balance_step(-20, 0, 2.0, MIN_SOC, 0.0)
+        assert r["fuel_remaining_litres"] == 0.0
+
+    def test_cold_dark_empty_tank_has_unmet_load(self):
+        r = energy_balance_step(-20, 0, 2.0, MIN_SOC, 0.0)
+        assert r["unmet_load_kw"] > 0.0
+
+    def test_limited_fuel_is_not_overspent(self):
+        r = energy_balance_step(-20, 0, 2.0, MIN_SOC, 10.0)
+        assert r["fuel_used_litres"] <= 10.0
+        assert r["fuel_remaining_litres"] >= 0.0
+
+
 class TestOutputFieldNames:
     """All 23 expected keys must be present in every result."""
 

@@ -26,7 +26,8 @@ _GEN_PARAMS = {
 
 
 def generator_output_and_fuel(generator_id, requested_power_kw,
-                               available=True, timestep_hours=1.0):
+                               available=True, timestep_hours=1.0,
+                               available_fuel_litres=None):
     """
     Simulates one timestep of a diesel generator.
 
@@ -34,6 +35,8 @@ def generator_output_and_fuel(generator_id, requested_power_kw,
     requested_power_kw : how much power the station needs from this generator
     available          : False if the generator has failed or is offline
     timestep_hours     : length of this simulation step in hours
+    available_fuel_litres : fuel available to this generator for this step.
+                             None preserves the legacy unlimited-fuel behavior.
 
     Returns a dict with:
       actual_output_kw  : power actually produced (kW)
@@ -50,20 +53,35 @@ def generator_output_and_fuel(generator_id, requested_power_kw,
     if requested_power_kw <= 0:
         return {"actual_output_kw": 0.0, "fuel_used_litres": 0.0, "status": "off"}
 
-    # Rule 3: cap output at rated capacity
+    # Rule 3: an empty tank prevents the generator from starting.
+    if available_fuel_litres is not None and available_fuel_litres <= 0:
+        return {"actual_output_kw": 0.0, "fuel_used_litres": 0.0, "status": "no_fuel"}
+
+    # Rule 4: cap output at rated capacity
     actual_output_kw = min(requested_power_kw, p["rated_kw"])
 
-    # Rule 4: diesel engines cannot run efficiently below a minimum load;
+    # Rule 5: diesel engines cannot run efficiently below a minimum load;
     #         if asked for less than minimum, run at minimum anyway
     if actual_output_kw < p["minimum_kw"]:
         actual_output_kw = p["minimum_kw"]
 
-    # Rule 5: fuel = idle burn (just to keep engine running) + load-dependent burn
+    # Rule 6: fuel = idle burn (just to keep engine running) + load-dependent burn
     fuel_used_litres = (p["idle_fuel_lph"] * timestep_hours
                         + p["fuel_per_kwh"] * actual_output_kw * timestep_hours)
+
+    # Do not consume more fuel than is present.  A generator needs enough fuel
+    # to sustain its minimum operating load; otherwise it stays off.
+    if available_fuel_litres is not None and fuel_used_litres > available_fuel_litres:
+        fuel_limited_output_kw = (
+            available_fuel_litres / timestep_hours - p["idle_fuel_lph"]
+        ) / p["fuel_per_kwh"]
+        if fuel_limited_output_kw < p["minimum_kw"]:
+            return {"actual_output_kw": 0.0, "fuel_used_litres": 0.0, "status": "no_fuel"}
+        actual_output_kw = fuel_limited_output_kw
+        fuel_used_litres = available_fuel_litres
 
     return {
         "actual_output_kw": round(actual_output_kw, 4),
         "fuel_used_litres": round(fuel_used_litres, 4),
-        "status":           "running",
+        "status":           "fuel_limited" if available_fuel_litres is not None and fuel_used_litres == available_fuel_litres else "running",
     }
