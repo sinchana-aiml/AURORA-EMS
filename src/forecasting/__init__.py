@@ -10,6 +10,7 @@
 #   - Station-level coordination (AuroraForecastingSystem)
 #   - Offline polar climatology and persistence fallbacks
 #   - Comprehensive evaluation metrics
+#   - Production inference service & Member 4 interface (ForecastService)
 # ─────────────────────────────────────────────────────────────────────────────
 
 from .preprocessor import (
@@ -49,6 +50,10 @@ from .evaluation import (
     prediction_interval_coverage,
     mean_prediction_interval_width,
 )
+from .service import (
+    ForecastService,
+    get_forecast,
+)
 
 __all__ = [
     # Preprocessing
@@ -83,4 +88,7 @@ __all__ = [
     "pinball_loss",
     "prediction_interval_coverage",
     "mean_prediction_interval_width",
+    # Production Service / Member 4 Interface
+    "ForecastService",
+    "get_forecast",
 ]
