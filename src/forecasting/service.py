@@ -109,6 +109,7 @@ class ForecastService:
         recent_history: Optional[Union[pd.DataFrame, List[Dict]]] = None,
         weather_forecast_feed: Optional[Union[pd.DataFrame, List[Dict]]] = None,
         is_offline: bool = False,
+        include_flexible: bool = True,
     ) -> pd.DataFrame:
         """
         Generates a multi-step forecast table conforming to Member 4's schema.
@@ -125,6 +126,9 @@ class ForecastService:
             External NWP weather forecast feed if online.
         is_offline : bool
             Flag set to True during communication outages.
+        include_flexible : bool, default True
+            Flag whether flexible station electrical load (10 kW) is included
+            in addition to base critical load (20 kW).
 
         Returns:
         --------
@@ -159,12 +163,14 @@ class ForecastService:
                 future_timestamps,
                 weather_forecast_feed,
                 recent_history,
+                include_flexible=include_flexible,
             )
         else:
             forecast_df = self._predict_offline(
                 future_timestamps,
                 recent_history,
                 is_comms_outage=is_offline,
+                include_flexible=include_flexible,
             )
 
         return forecast_df
@@ -174,6 +180,7 @@ class ForecastService:
         current_timestamp: Union[str, pd.Timestamp],
         recent_history: Optional[Union[pd.DataFrame, List[Dict]]] = None,
         is_offline: bool = False,
+        include_flexible: bool = True,
     ) -> pd.DataFrame:
         """Convenience method returning a standard 24-hour day-ahead forecast."""
         return self.generate_forecast(
@@ -181,6 +188,7 @@ class ForecastService:
             horizon_hours=24,
             recent_history=recent_history,
             is_offline=is_offline,
+            include_flexible=include_flexible,
         )
 
     def _predict_offline(
@@ -188,6 +196,7 @@ class ForecastService:
         future_timestamps: List[pd.Timestamp],
         recent_history: Optional[Union[pd.DataFrame, List[Dict]]] = None,
         is_comms_outage: bool = False,
+        include_flexible: bool = True,
     ) -> pd.DataFrame:
         """
         Executes offline forecasting using Polar Climatology lookup table,
@@ -197,7 +206,7 @@ class ForecastService:
             self._initialize_service()
 
         rows = []
-        elec_kw = electrical_load(include_flexible=True)
+        elec_kw = electrical_load(include_flexible=include_flexible)
 
         for step, ts in enumerate(future_timestamps, start=1):
             if self.climatology is not None:
@@ -331,6 +340,7 @@ class ForecastService:
         future_timestamps: List[pd.Timestamp],
         weather_forecast_feed: Union[pd.DataFrame, List[Dict]],
         recent_history: Optional[Union[pd.DataFrame, List[Dict]]],
+        include_flexible: bool = True,
     ) -> pd.DataFrame:
         """
         Executes multi-quantile Machine Learning prediction when online models
@@ -395,7 +405,7 @@ class ForecastService:
             preds_df = pd.DataFrame(preds_rows)
 
         rows = []
-        elec_kw = electrical_load(include_flexible=True)
+        elec_kw = electrical_load(include_flexible=include_flexible)
 
         for step, ts in enumerate(future_timestamps, start=1):
             idx = step - 1 if step - 1 < len(preds_df) else -1
@@ -554,6 +564,7 @@ def get_forecast(
     weather_forecast_feed: Optional[Union[pd.DataFrame, List[Dict]]] = None,
     is_offline: bool = False,
     model_dir: str = DEFAULT_MODEL_DIR,
+    include_flexible: bool = True,
 ) -> pd.DataFrame:
     """
     Direct function entry point for Member 4 to retrieve forecasts.
@@ -566,4 +577,5 @@ def get_forecast(
         recent_history=recent_history,
         weather_forecast_feed=weather_forecast_feed,
         is_offline=is_offline,
+        include_flexible=include_flexible,
     )

@@ -54,6 +54,13 @@ from .service import (
     ForecastService,
     get_forecast,
 )
+from .validation import (
+    validate_forecast_output,
+    validate_weather_input,
+    normalize_weather_columns,
+    ForecastValidationError,
+    EXPECTED_CONTRACT_COLUMNS,
+)
 
 __all__ = [
     # Preprocessing
@@ -91,4 +98,10 @@ __all__ = [
     # Production Service / Member 4 Interface
     "ForecastService",
     "get_forecast",
+    # Validation & Integration (Phase 4)
+    "validate_forecast_output",
+    "validate_weather_input",
+    "normalize_weather_columns",
+    "ForecastValidationError",
+    "EXPECTED_CONTRACT_COLUMNS",
 ]
