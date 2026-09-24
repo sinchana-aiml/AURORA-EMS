@@ -73,14 +73,16 @@ def energy_balance_step(
     # Step 4: Generator 1
     g1 = generator_output_and_fuel(1, deficit_kw,
                                    available=generator_1_available,
-                                   timestep_hours=timestep_hours)
+                                   timestep_hours=timestep_hours,
+                                   available_fuel_litres=fuel_remaining_litres)
     deficit_kw            -= g1["actual_output_kw"]
     fuel_remaining_litres  = max(0.0, fuel_remaining_litres - g1["fuel_used_litres"])
 
     # Step 5: Generator 2
     g2 = generator_output_and_fuel(2, deficit_kw,
                                    available=generator_2_available,
-                                   timestep_hours=timestep_hours)
+                                   timestep_hours=timestep_hours,
+                                   available_fuel_litres=fuel_remaining_litres)
     deficit_kw            -= g2["actual_output_kw"]
     fuel_remaining_litres  = max(0.0, fuel_remaining_litres - g2["fuel_used_litres"])
 
