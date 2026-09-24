@@ -19,6 +19,7 @@ export type TwinTelemetry = {
   renewableUsedKw: number
   generatorTotalKw: number
   batterySocKwh: number
+  batteryDischargeKw: number
   fuelRemainingLitres: number
   unmetLoadKw: number
   criticalLoadServed: boolean
@@ -78,11 +79,46 @@ export type DispatchSummary = {
   fuel_saved_pct?: number
 }
 
+export type DispatchRow = {
+  battery_charge_kw: number
+  battery_discharge_kw: number
+  battery_reserve_kwh: number
+  battery_soc_kwh: number
+  critical_load_served: boolean
+  flexible_load_shed_kw: number
+  fuel_remaining_litres: number
+  fuel_used_litres: number
+  generator_1_kw: number
+  generator_2_kw: number
+  generator_total_kw: number
+  low_fuel_mode: boolean
+  renewable_curtailed_kw: number
+  renewable_used_kw: number
+  unmet_load_kw: number
+}
+
+export type ResilienceLatest = {
+  battery_soc_kwh: number
+  connectivity_status: string
+  critical_load_served: boolean
+  dispatch_mode: string
+  fallback_reason: string
+  fallback_triggered: boolean
+  flexible_load_shed: boolean
+  fuel_remaining_litres: number
+  generator_total_kw: number
+  low_fuel_warning: boolean
+  reasoning: string
+  storm_active: boolean
+  unmet_load_kw: number
+  used_cached_weather: boolean
+}
+
 export type DashboardPayload = {
   station: { id: string; name: string; latitude: number; longitude: number }
   provenance: { data_mode: string; weather_source: string; weather_sample: string }
   telemetry: { latest: BackendTwinTelemetry; history: BackendTwinTelemetry[] }
   forecast: { available: boolean; horizon_hours: number; rows: ForecastRow[]; error?: string }
-  dispatch: { available: boolean; strategy: string; history: Record<string, unknown>[]; summary: DispatchSummary; error?: string }
-  resilience: { available: boolean; connectivity_status: string; scenario: string; latest: Record<string, unknown> | null; error?: string }
+  dispatch: { available: boolean; strategy: string; history: DispatchRow[]; summary: DispatchSummary; error?: string }
+  resilience: { available: boolean; connectivity_status: string; scenario: string; latest: ResilienceLatest | null; error?: string }
 }
