@@ -19,7 +19,13 @@
 
 import os
 import sys
+from threading import Lock
 from typing import Dict, List, Optional, Sequence, Union
+
+try:
+    import joblib
+except ImportError:  # pragma: no cover - joblib is a declared dependency
+    joblib = None
 
 import numpy as np
 import pandas as pd
@@ -55,6 +61,11 @@ from src.forecasting.models import (
 
 
 DEFAULT_MODEL_DIR = os.path.join(_ROOT, "models")
+POLAR_CLIMATOLOGY_ARTIFACT = "polar_climatology.joblib"
+POLAR_CLIMATOLOGY_ARTIFACT_TYPE = "aurora_ems.polar_climatology"
+POLAR_CLIMATOLOGY_SCHEMA_VERSION = 1
+_SERVICE_CACHE: Dict[str, "ForecastService"] = {}
+_SERVICE_CACHE_LOCK = Lock()
 
 
 class ForecastService:
@@ -96,11 +107,71 @@ class ForecastService:
             except Exception:
                 self.is_online_ready = False
 
-        # Fallback initialization: build climatology from canonical dataset
+        persisted_climatology = self._load_persisted_climatology()
+        if persisted_climatology is not None:
+            self.climatology = persisted_climatology
+            return
+
         if os.path.exists(DEFAULT_DATA_PATH):
             df = load_and_prepare_dataset(DEFAULT_DATA_PATH)
             self.climatology = PolarClimatologyForecaster()
             self.climatology.fit(df)
+            try:
+                self._save_persisted_climatology(self.climatology)
+            except Exception:
+                pass
+
+    def _load_persisted_climatology(self) -> Optional[PolarClimatologyForecaster]:
+        """Load a validated fitted climatology artifact when available."""
+        if joblib is None:
+            return None
+
+        artifact_path = os.path.join(self.model_dir, POLAR_CLIMATOLOGY_ARTIFACT)
+        if not os.path.exists(artifact_path):
+            return None
+
+        try:
+            artifact = joblib.load(artifact_path)
+            if not isinstance(artifact, dict):
+                return None
+            if artifact.get("artifact_type") != POLAR_CLIMATOLOGY_ARTIFACT_TYPE:
+                return None
+            if artifact.get("schema_version") != POLAR_CLIMATOLOGY_SCHEMA_VERSION:
+                return None
+            if artifact.get("source_dataset") != os.path.abspath(DEFAULT_DATA_PATH):
+                return None
+
+            climatology = artifact.get("climatology")
+            if not isinstance(climatology, PolarClimatologyForecaster):
+                return None
+            if not climatology.is_fitted or not isinstance(climatology.lookup_table, dict):
+                return None
+            if list(climatology.target_cols) != list(artifact.get("target_cols", [])):
+                return None
+            if not climatology.lookup_table:
+                return None
+            return climatology
+        except Exception:
+            return None
+
+    def _save_persisted_climatology(
+        self,
+        climatology: PolarClimatologyForecaster,
+    ) -> None:
+        """Persist a fitted climatology for future process initialization."""
+        if joblib is None:
+            return
+
+        os.makedirs(self.model_dir, exist_ok=True)
+        artifact = {
+            "artifact_type": POLAR_CLIMATOLOGY_ARTIFACT_TYPE,
+            "schema_version": POLAR_CLIMATOLOGY_SCHEMA_VERSION,
+            "target_cols": list(climatology.target_cols),
+            "source_dataset": os.path.abspath(DEFAULT_DATA_PATH),
+            "climatology": climatology,
+        }
+        artifact_path = os.path.join(self.model_dir, POLAR_CLIMATOLOGY_ARTIFACT)
+        joblib.dump(artifact, artifact_path)
 
     def generate_forecast(
         self,
@@ -569,7 +640,7 @@ def get_forecast(
     """
     Direct function entry point for Member 4 to retrieve forecasts.
     """
-    service = ForecastService(model_dir=model_dir)
+    service = get_forecast_service(model_dir=model_dir)
 
     return service.generate_forecast(
         current_timestamp=current_timestamp,
@@ -579,3 +650,17 @@ def get_forecast(
         is_offline=is_offline,
         include_flexible=include_flexible,
     )
+
+
+def get_forecast_service(model_dir: str = DEFAULT_MODEL_DIR) -> ForecastService:
+    """Return the process-local forecasting service for a model directory."""
+    cached_service = _SERVICE_CACHE.get(model_dir)
+    if cached_service is not None:
+        return cached_service
+
+    with _SERVICE_CACHE_LOCK:
+        cached_service = _SERVICE_CACHE.get(model_dir)
+        if cached_service is None:
+            cached_service = ForecastService(model_dir=model_dir)
+            _SERVICE_CACHE[model_dir] = cached_service
+        return cached_service
