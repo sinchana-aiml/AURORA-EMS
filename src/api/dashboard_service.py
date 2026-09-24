@@ -10,7 +10,7 @@ from src.digital_twin import load_weather_csv, run_simulation, validate_weather_
 from src.digital_twin.scenarios import apply_storm_scenario
 from src.dispatch.adapter import adapt_digital_twin_results
 from src.dispatch.optimizer import optimized_dispatch_lookahead
-from src.forecasting import ForecastService
+from src.forecasting import get_forecast_service
 from src.resilience.scenario_runner import run_resilience_scenario
 
 
@@ -77,7 +77,7 @@ def build_dashboard_payload(scenario: str = "normal", horizon_hours: int = 24) -
 
     forecast: dict[str, Any]
     try:
-        forecast_rows = ForecastService().generate_forecast(
+        forecast_rows = get_forecast_service().generate_forecast(
             current_timestamp=telemetry_history[-1]["timestamp"],
             horizon_hours=horizon_hours,
             is_offline=options["communication_loss"],

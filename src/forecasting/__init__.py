@@ -53,6 +53,7 @@ from .evaluation import (
 from .service import (
     ForecastService,
     get_forecast,
+    get_forecast_service,
 )
 from .validation import (
     validate_forecast_output,
@@ -98,6 +99,7 @@ __all__ = [
     # Production Service / Member 4 Interface
     "ForecastService",
     "get_forecast",
+    "get_forecast_service",
     # Validation & Integration (Phase 4)
     "validate_forecast_output",
     "validate_weather_input",
