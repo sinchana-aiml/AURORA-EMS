@@ -8,5 +8,9 @@ import './interactions.css'
 import './system-interaction.css'
 import './auth.css'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<React.StrictMode><Polar3DAtmosphere /><AuthWrapper /></React.StrictMode>)
-
+ReactDOM.createRoot(document.getElementById('root')!).render(
+  <React.StrictMode>
+    <Polar3DAtmosphere />
+    <AuthWrapper />
+  </React.StrictMode>
+)
