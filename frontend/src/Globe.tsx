@@ -105,8 +105,9 @@ function Scene({ selected, onSelect, telemetry, stormRisk, connectivityStatus }:
   return <><ambientLight intensity={.42} /><directionalLight position={[-3,-2,4]} intensity={1.45} color="#d2efff" /><pointLight position={[2,-1,-3]} intensity={.45} color="#2be6c1" /><Sparkles count={70} scale={7} size={1.05} speed={.035} color="#72ddff" /><Aurora active={auroraActive} stormRisk={stormRisk} /><Snowfall windSpeed={windSpeed} temperature={temperature} /><WindField windSpeed={windSpeed} />{telemetry && <Earth station={selected} onSelect={onSelect} telemetry={telemetry} connectivityStatus={connectivityStatus} />}<OrbitControls enablePan={false} enableDamping dampingFactor={.08} minDistance={2.75} maxDistance={4.7} rotateSpeed={.5} autoRotate autoRotateSpeed={.18} /></>
 }
 
-export default function Globe({ selected, onSelect, resetToken }: { selected: Station; onSelect: (station: Station) => void; resetToken: number }) {
-  const [environment, setEnvironment] = useState<GlobeEnvironment | null>(null)
+export default function Globe({ selected, onSelect, resetToken, telemetry, stormRisk, connectivityStatus }: { selected: Station; onSelect: (station: Station) => void; resetToken: number; telemetry: TwinTelemetry | null; stormRisk: boolean; connectivityStatus?: string }) {
+  const [environment, setEnvironment] = useState<GlobeEnvironment | null>(() => telemetry ? { telemetry, stormRisk, connectivityStatus } : null)
   useEffect(() => { const update = (event: Event) => setEnvironment((event as CustomEvent<GlobeEnvironment>).detail); window.addEventListener('aurora-globe-data', update); return () => window.removeEventListener('aurora-globe-data', update) }, [])
+  useEffect(() => { if (telemetry) setEnvironment({ telemetry, stormRisk, connectivityStatus }) }, [connectivityStatus, stormRisk, telemetry])
   return <Canvas key={resetToken} camera={{ position:[0,-3.82,0], fov:42 }} gl={{ antialias:true }} dpr={[1,2]}><color attach="background" args={['#020a16']} /><fog attach="fog" args={['#020a16',4,9]} /><Scene selected={selected} onSelect={onSelect} telemetry={environment?.telemetry ?? null} stormRisk={environment?.stormRisk ?? false} connectivityStatus={environment?.connectivityStatus} /></Canvas>
 }
