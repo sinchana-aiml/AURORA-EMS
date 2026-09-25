@@ -1,8 +1,8 @@
-import { Billboard, Html, Line, Sparkles, Text } from '@react-three/drei'
+import { Line, Sparkles } from '@react-three/drei'
 import { Canvas, useFrame } from '@react-three/fiber'
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
-import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, Mail, ShieldCheck, Sparkles as SparklesIcon, Zap } from 'lucide-react'
+import { AlertCircle, ArrowRight, Eye, EyeOff, Lock, User } from 'lucide-react'
 
 interface AuthExperienceProps {
   onLoginSuccess: () => void
@@ -10,12 +10,6 @@ interface AuthExperienceProps {
 
 const DEMO_USER = 'operator@aurora.ems'
 const DEMO_PASS = 'aurora2026'
-
-const FALLING_WORDS = [
-  'AURORA', 'EMS', 'PREDICT', 'SIMULATE', 'OPTIMIZE', 'PROTECT',
-  'ENERGY', 'AI', 'POLAR', 'STATION', 'ANTARCTICA', 'DIGITAL TWIN',
-  'FORECAST', 'BHARATI'
-]
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -29,191 +23,136 @@ function useReducedMotion() {
   return reduced
 }
 
-// 3D Background Aurora Ribbons
-function AuroraRibbons({ stage }: { stage: 'intro' | 'falling' | 'login' | 'authenticating' }) {
-  const group = useRef<THREE.Group>(null)
-  const ribbons = useMemo(() => [-.5, -.2, .25, .55].map((offset) => Array.from({ length: 28 }, (_, index) => {
-    const t = index / 27
-    return new THREE.Vector3(-6 + t * 12, 1.8 + Math.sin(t * Math.PI * 2.2 + offset * 4) * .35 + offset * .2, -4 + Math.cos(t * Math.PI * 1.4) * .6)
-  })), [])
-
-  useFrame(({ clock }) => {
-    if (!group.current) return
-    group.current.position.y = Math.sin(clock.getElapsedTime() * .08) * .15
-    group.current.rotation.z = Math.sin(clock.getElapsedTime() * .04) * .03
-  })
-
-  const opacity = stage === 'authenticating' ? .45 : stage === 'intro' ? .22 : .16
-  return (
-    <group ref={group}>
-      {ribbons.map((points, index) => (
-        <Line
-          key={index}
-          points={points}
-          color={index % 3 === 1 ? '#55e9c1' : index % 3 === 2 ? '#38bdf8' : '#70d9de'}
-          transparent
-          opacity={opacity}
-          lineWidth={index === 1 ? 1.4 : .8}
-        />
-      ))}
-    </group>
-  )
-}
-
-// 3D Falling Text Mesh Cloud
-function Falling3DTextCloud({ stage, reduced }: { stage: 'intro' | 'falling' | 'login' | 'authenticating'; reduced: boolean }) {
-  const items = useMemo(() => FALLING_WORDS.map((word, i) => ({
-    word,
-    position: new THREE.Vector3(
-      ((i * 37) % 9 - 4.5) * 1.2,
-      ((i * 53) % 7 - 3.5) * 1.1,
-      -2 - (i % 8) * 1.8
-    ),
-    speed: 0.6 + (i % 5) * 0.25,
-    rotSpeed: (i % 4 - 2) * 0.008,
-    color: i % 2 === 0 ? '#38bdf8' : '#55e9c1'
-  })), [])
-
-  const groupRef = useRef<THREE.Group>(null)
+// 3D Globe Mesh for the Login Environment
+function LoginEnvironmentGlobe({ reduced }: { reduced: boolean }) {
+  const globeRef = useRef<THREE.Group>(null)
 
   useFrame((_, delta) => {
-    if (!groupRef.current || reduced) return
-    items.forEach((item, index) => {
-      if (stage === 'falling') {
-        item.position.y -= item.speed * delta * 1.8
-        if (item.position.y < -5) item.position.y = 5
-      }
-    })
+    if (!globeRef.current || reduced) return
+    globeRef.current.rotation.y += delta * 0.06
   })
 
-  if (stage === 'intro') return null
-
   return (
-    <group ref={groupRef}>
-      {items.map((item, index) => (
-        <Billboard key={index} position={item.position}>
-          <Text
-            fontSize={stage === 'falling' ? 0.45 : 0.25}
-            color={item.color}
-            fillOpacity={stage === 'falling' ? 0.85 : 0.2}
-            letterSpacing={0.08}
-          >
-            {item.word}
-          </Text>
-        </Billboard>
-      ))}
+    <group ref={globeRef} position={[0, -0.2, -1.2]} rotation={[0.35, 0, 0]}>
+      {/* Primary Globe Sphere */}
+      <mesh>
+        <sphereGeometry args={[1.65, 64, 64]} />
+        <meshPhongMaterial
+          color="#0a243a"
+          emissive="#02101e"
+          specular="#38bdf8"
+          shininess={16}
+          wireframe={false}
+        />
+      </mesh>
+
+      {/* Outer Atmosphere Glow Shell */}
+      <mesh scale={1.035}>
+        <sphereGeometry args={[1.65, 48, 48]} />
+        <meshBasicMaterial
+          color="#38bdf8"
+          transparent
+          opacity={0.12}
+          side={THREE.BackSide}
+        />
+      </mesh>
+
+      {/* Lat/Long Grid Rings */}
+      <mesh scale={1.008} rotation={[Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[1.64, 1.65, 64]} />
+        <meshBasicMaterial color="#50c7ff" transparent opacity={0.25} side={THREE.DoubleSide} />
+      </mesh>
     </group>
   )
 }
 
-// Holographic 3D Telemetry Overlay Labels
-function HolographicTelemetry({ stage }: { stage: 'intro' | 'falling' | 'login' | 'authenticating' }) {
-  if (stage !== 'login') return null
+// Volumetric 3D Aurora Environment Ribbon Layers
+function Volumetric3DAurora({ authenticating, reduced }: { authenticating: boolean; reduced: boolean }) {
+  const group = useRef<THREE.Group>(null)
+
+  const layers = useMemo(() => [
+    { z: -3.2, color: '#10b981', opacity: 0.32, lineWidth: 1.6, freq: 2.2 },
+    { z: -4.8, color: '#38bdf8', opacity: 0.26, lineWidth: 1.2, freq: 1.8 },
+    { z: -6.2, color: '#50c7ff', opacity: 0.20, lineWidth: 0.9, freq: 1.4 },
+    { z: -7.8, color: '#54eec0', opacity: 0.15, lineWidth: 0.7, freq: 1.1 },
+  ], [])
+
+  const ribbonCurves = useMemo(() => layers.map((layer) => {
+    return Array.from({ length: 32 }, (_, index) => {
+      const t = index / 31
+      return new THREE.Vector3(
+        -8 + t * 16,
+        2.2 + Math.sin(t * Math.PI * layer.freq) * 0.45,
+        layer.z + Math.cos(t * Math.PI * 1.3) * 0.6
+      )
+    })
+  }), [layers])
+
+  useFrame(({ clock }) => {
+    if (!group.current || reduced) return
+    const t = clock.getElapsedTime()
+    group.current.position.y = Math.sin(t * 0.08) * 0.18
+    group.current.position.x = Math.cos(t * 0.05) * 0.12
+    group.current.rotation.z = Math.sin(t * 0.035) * 0.025
+  })
 
   return (
-    <group>
-      <Billboard position={[-2.9, 1.85, 0]}>
-        <Html transform distanceFactor={2.4}>
-          <div className="holo-telemetry-tag">
-            <i /> BHARATI STATION — ANTARCTICA
-          </div>
-        </Html>
-      </Billboard>
-
-      <Billboard position={[2.9, 1.85, 0]}>
-        <Html transform distanceFactor={2.4}>
-          <div className="holo-telemetry-tag">
-            <i /> SYSTEM ONLINE • TELEMETRY 100%
-          </div>
-        </Html>
-      </Billboard>
-
-      <Billboard position={[-2.9, -1.85, 0]}>
-        <Html transform distanceFactor={2.4}>
-          <div className="holo-telemetry-tag">
-            <i /> ENERGY GRID STABLE • 600 kWh SOC
-          </div>
-        </Html>
-      </Billboard>
-
-      <Billboard position={[2.9, -1.85, 0]}>
-        <Html transform distanceFactor={2.4}>
-          <div className="holo-telemetry-tag">
-            <i /> AI FORECAST READY • P50 LOAD OPTIMIZED
-          </div>
-        </Html>
-      </Billboard>
+    <group ref={group}>
+      {ribbonCurves.map((points, index) => {
+        const layer = layers[index]
+        const opacity = authenticating ? layer.opacity * 1.5 : layer.opacity
+        return (
+          <Line
+            key={index}
+            points={points}
+            color={layer.color}
+            transparent
+            opacity={opacity}
+            lineWidth={layer.lineWidth}
+          />
+        )
+      })}
     </group>
   )
 }
 
-// Main 3D Scene Controller
-function SceneController({ stage, reduced }: { stage: 'intro' | 'falling' | 'login' | 'authenticating'; reduced: boolean }) {
+// 3D Scene Controller & Camera Motion
+function SceneController({ authenticating, reduced }: { authenticating: boolean; reduced: boolean }) {
   useFrame(({ camera }) => {
     if (reduced) {
-      camera.position.set(0, 0, 4.5)
+      camera.position.set(0, 0, 5)
       return
     }
 
-    if (stage === 'intro') {
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 6, 0.05)
-    } else if (stage === 'falling') {
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 1.5, 0.04)
-    } else if (stage === 'login') {
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 4.5, 0.06)
-      camera.position.y = THREE.MathUtils.lerp(camera.position.y, 0, 0.05)
-    } else if (stage === 'authenticating') {
-      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 0.5, 0.08)
+    if (authenticating) {
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 1.2, 0.08)
+    } else {
+      camera.position.z = THREE.MathUtils.lerp(camera.position.z, 5, 0.04)
     }
   })
 
   return (
     <>
-      <ambientLight intensity={0.4} />
-      <directionalLight position={[-3, 2, 4]} intensity={1.2} color="#d2efff" />
-      <Sparkles count={80} scale={8} size={1.2} speed={0.04} color="#38bdf8" />
-      <AuroraRibbons stage={stage} />
-      <Falling3DTextCloud stage={stage} reduced={reduced} />
-      <HolographicTelemetry stage={stage} />
+      <ambientLight intensity={0.45} />
+      <directionalLight position={[-3, 3, 4]} intensity={1.35} color="#d2efff" />
+      <pointLight position={[2, -1, 3]} intensity={0.8} color="#38bdf8" />
+      <Sparkles count={75} scale={10} size={1.2} speed={0.03} color="#38bdf8" />
+      <LoginEnvironmentGlobe reduced={reduced} />
+      <Volumetric3DAurora authenticating={authenticating} reduced={reduced} />
     </>
   )
 }
 
 export default function AuthExperience({ onLoginSuccess }: AuthExperienceProps) {
-  const [stage, setStage] = useState<'intro' | 'falling' | 'login' | 'authenticating'>('intro')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isAuthenticating, setIsAuthenticating] = useState(false)
 
   const reducedMotion = useReducedMotion()
-
-  // Automated 3-Stage Transition Timeline
-  useEffect(() => {
-    if (reducedMotion) {
-      setStage('login')
-      return
-    }
-
-    const timer1 = setTimeout(() => {
-      setStage('falling')
-    }, 2800)
-
-    const timer2 = setTimeout(() => {
-      setStage('login')
-    }, 5000)
-
-    return () => {
-      clearTimeout(timer1)
-      clearTimeout(timer2)
-    }
-  }, [reducedMotion])
-
-  const handleSkipIntro = () => {
-    setStage('login')
-  }
 
   const handleAutoFill = () => {
     setUsername(DEMO_USER)
@@ -227,10 +166,10 @@ export default function AuthExperience({ onLoginSuccess }: AuthExperienceProps) 
 
     if (username.trim().toLowerCase() === DEMO_USER && password === DEMO_PASS) {
       setIsSubmitting(true)
-      setStage('authenticating')
+      setIsAuthenticating(true)
       setTimeout(() => {
         onLoginSuccess()
-      }, 700)
+      }, 750)
     } else {
       setError('Invalid username or password.')
       setIsSubmitting(false)
@@ -239,143 +178,162 @@ export default function AuthExperience({ onLoginSuccess }: AuthExperienceProps) 
 
   return (
     <div className="auth-view-root">
-      {/* 3D Canvas Background & Falling Text Field */}
+      {/* 3D WebGL Background Canvas */}
       <div className="auth-canvas-container">
-        <Canvas camera={{ position: [0, 0, 6], fov: 48 }} dpr={[1, 1.5]} gl={{ antialias: true }}>
-          <color attach="background" args={['#020914']} />
-          <fog attach="fog" args={['#020914', 4, 10]} />
-          <SceneController stage={stage} reduced={reducedMotion} />
+        <Canvas camera={{ position: [0, 0, 5], fov: 46 }} dpr={[1, 1.5]} gl={{ antialias: true }}>
+          <color attach="background" args={['#020a16']} />
+          <fog attach="fog" args={['#020a16', 3.5, 12]} />
+          <SceneController authenticating={isAuthenticating} reduced={reducedMotion} />
         </Canvas>
       </div>
 
-      {/* Stage 1: AURORA INTRO Overlay */}
-      {stage === 'intro' && (
-        <div className="intro-stage-overlay">
-          <div className="intro-badge">
-            <i />
-            <span>AURORA-EMS POLAR DIGITAL TWIN</span>
-          </div>
+      {/* Atmospheric Haze Backdrop */}
+      <div className="polar-ambient-backdrop" />
 
-          <h1 className="intro-title">AURORA-EMS</h1>
-
-          <p className="intro-description">
-            AI-Driven Energy Management System for Polar Research Stations
-          </p>
-
-          <div className="intro-taglines">
-            <span>PREDICT</span>
-            <span>SIMULATE</span>
-            <span>OPTIMIZE</span>
-            <span>PROTECT</span>
-          </div>
+      {/* Top-Left Stationary Brand Header */}
+      <div className="top-left-brand">
+        <svg className="brand-delta-logo" viewBox="0 0 40 40" fill="currentColor">
+          <path d="M20 4L36 34H4L20 4Z" />
+        </svg>
+        <div className="top-left-brand-text">
+          <h1>AURORA-EMS</h1>
+          <p>AI-Driven Energy Management System<br />for Polar Research Stations</p>
         </div>
-      )}
+      </div>
 
-      {/* Stage 3: LOGIN COMMAND CENTER Overlay */}
-      {(stage === 'login' || stage === 'authenticating') && (
-        <div className={`login-stage-container ${stage === 'authenticating' ? 'login-success-zoom' : ''}`}>
-          <div className="login-card-panel">
-            <div className="login-card-header">
-              <span className="brand-icon">◆</span>
-              <h2>AURORA-EMS</h2>
-              <p>POLAR ENERGY INTELLIGENCE</p>
+      {/* Floating Status Telemetry (Non-Numeric Status Badges Only) */}
+      <div className="holo-pos-top-left">
+        <div className="holo-card-sm">
+          <div className="holo-title-row">
+            <i className="holo-dot" /> BHARATI STATION
+          </div>
+          <div className="holo-sub-label">ANTARCTICA</div>
+        </div>
+      </div>
+
+      <div className="holo-pos-top-right">
+        <div className="holo-status-item">
+          <i className="holo-dot" /> SYSTEM ONLINE
+        </div>
+        <div className="holo-status-item">
+          <i className="holo-dot" /> AI ENERGY MANAGEMENT
+        </div>
+      </div>
+
+      {/* Central Reference Glassmorphic Login Panel */}
+      <div className={`login-card-stage ${isAuthenticating ? 'success-transition-zoom' : ''}`}>
+        <div className="reference-login-card">
+          <div className="card-brand-header">
+            <svg className="card-logo-emblem" viewBox="0 0 40 40" fill="currentColor">
+              <path d="M20 4L36 34H4L20 4Z" />
+            </svg>
+            <h2>AURORA-EMS</h2>
+            <p className="card-kicker-text">POLAR ENERGY INTELLIGENCE</p>
+            <p className="card-subdesc-text">AI-Driven Energy Management System for Polar Research Stations</p>
+          </div>
+
+          <form className="login-form-group" onSubmit={handleSubmit}>
+            {error && (
+              <div className="auth-error-alert">
+                <AlertCircle size={16} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <div className="input-field-block">
+              <label htmlFor="ref-input-user">Username / Station ID</label>
+              <div className="input-relative-wrap">
+                <User className="input-leading-icon" size={17} />
+                <input
+                  id="ref-input-user"
+                  type="email"
+                  className="ref-input-style"
+                  placeholder="Enter username or station ID"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                />
+              </div>
             </div>
 
-            {/* Quick Demo Credentials Autofill Banner */}
-            <div className="demo-hint-banner">
-              <div className="demo-hint-text">
-                Demo Operator: <b>{DEMO_USER}</b> / <b>{DEMO_PASS}</b>
+            <div className="input-field-block">
+              <label htmlFor="ref-input-pwd">Password</label>
+              <div className="input-relative-wrap">
+                <Lock className="input-leading-icon" size={17} />
+                <input
+                  id="ref-input-pwd"
+                  type={showPassword ? 'text' : 'password'}
+                  className="ref-input-style"
+                  placeholder="Enter password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="pwd-eye-btn"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
-              <button type="button" className="autofill-action-btn" onClick={handleAutoFill}>
-                Auto-fill
+            </div>
+
+            <div className="options-row">
+              <label className="remember-device-check">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                />
+                <span>Remember this device</span>
+              </label>
+              <a
+                href="#forgot"
+                onClick={(e) => { e.preventDefault(); alert('Demo environment: Please use password "aurora2026"') }}
+                className="forgot-pwd-link"
+              >
+                Forgot password?
+              </a>
+            </div>
+
+            <button type="submit" className="enter-command-btn" disabled={isSubmitting}>
+              <span>{isSubmitting ? 'AUTHENTICATING...' : 'ENTER COMMAND CENTER'}</span>
+              {!isSubmitting && <ArrowRight size={17} />}
+            </button>
+
+            {/* Subtle Demo Access Sub-Card */}
+            <div className="demo-access-box">
+              <div className="demo-access-info">
+                <span className="demo-access-tag">
+                  ⚙️ DEMO ACCESS
+                </span>
+                <div className="demo-access-line">
+                  <span>Username:</span> <code>{DEMO_USER}</code>
+                </div>
+                <div className="demo-access-line">
+                  <span>Password:</span> <code>{DEMO_PASS}</code>
+                </div>
+              </div>
+              <button type="button" className="autofill-btn" onClick={handleAutoFill}>
+                <User size={13} />
+                AUTO-FILL
               </button>
             </div>
 
-            <form className="login-form" onSubmit={handleSubmit}>
-              {error && (
-                <div className="error-alert-banner">
-                  <AlertCircle size={16} />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              <div className="form-field">
-                <label htmlFor="input-username">Username / Station ID</label>
-                <div className="input-rel-wrap">
-                  <Mail className="input-icon" size={17} />
-                  <input
-                    id="input-username"
-                    type="email"
-                    className="form-input"
-                    placeholder="operator@aurora.ems"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="form-field">
-                <label htmlFor="input-password">Password</label>
-                <div className="input-rel-wrap">
-                  <Lock className="input-icon" size={17} />
-                  <input
-                    id="input-password"
-                    type={showPassword ? 'text' : 'password'}
-                    className="form-input"
-                    placeholder="••••••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="toggle-pwd-btn"
-                    onClick={() => setShowPassword((prev) => !prev)}
-                    title={showPassword ? 'Hide password' : 'Show password'}
-                  >
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="form-row-options">
-                <label className="remember-check">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                  />
-                  <span>Remember this device</span>
-                </label>
-                <a href="#forgot" onClick={(e) => { e.preventDefault(); alert('Demo environment: Please use password "aurora2026"') }} className="forgot-link">
-                  Forgot password?
-                </a>
-              </div>
-
-              <button type="submit" className="login-submit-btn" disabled={isSubmitting}>
-                <span>{isSubmitting ? 'AUTHENTICATING...' : 'ENTER COMMAND CENTER'}</span>
-                {!isSubmitting && <ArrowRight size={17} />}
-              </button>
-
-              <div className="register-footer">
-                <span>Don't have an account?</span>
-                <a href="#register" onClick={(e) => { e.preventDefault(); alert('Demo environment: Bharati station account active.') }}>
-                  Register
-                </a>
-              </div>
-            </form>
-          </div>
+            <div className="register-card-footer">
+              <span>Don't have an account?</span>
+              <a
+                href="#register"
+                onClick={(e) => { e.preventDefault(); alert('Demo environment: Bharati station account active.') }}
+              >
+                Register
+              </a>
+            </div>
+          </form>
         </div>
-      )}
-
-      {/* Skip Intro Button */}
-      {stage !== 'login' && stage !== 'authenticating' && (
-        <button className="skip-intro-btn" onClick={handleSkipIntro}>
-          <span>SKIP INTRO</span>
-          <ArrowRight size={13} />
-        </button>
-      )}
+      </div>
     </div>
   )
 }
