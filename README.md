@@ -150,6 +150,8 @@ The optimization considers a 24-hour look-ahead horizon and attempts to
 reduce diesel consumption while maintaining station reliability and
 protecting critical loads.
 
+The objective is not fuel minimization alone: critical-load protection and station reliability remain hard priorities when determining the dispatch strategy.
+
 ### Tested simulation example
 
 For one validated 24-hour simulation dataset:
@@ -166,6 +168,8 @@ For one validated 24-hour simulation dataset:
 > **Important:** These values are results from a project simulation dataset.
 > They are not guaranteed real-world savings or measurements from a polar
 > research station.
+
+A baseline-versus-optimized comparison is used to quantify the effect of the dispatch strategy on fuel consumption while monitoring unmet and critical load.
 
 ---
 
@@ -409,6 +413,8 @@ The requested data would help us:
 > Real station data will only be incorporated subject to authorization,
 > availability, applicable data-sharing requirements, and security/privacy
 > restrictions.
+
+Bharati is designed for year-round scientific research and supports personnel, laboratories, regulated power, heating, water, and communications, making station-specific operational data valuable for future validation of the model.
 
 ---
 
