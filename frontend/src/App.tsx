@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, Bell, Box, ChevronRight, CloudSun, FileText, Gauge, Leaf, MapPin, Menu, RotateCcw, Search, Settings, ShieldCheck, Sparkles, UserRound, X, Zap } from 'lucide-react'
+import { Activity, Bell, Box, ChevronRight, CloudSun, FileText, Gauge, Leaf, LogOut, MapPin, Menu, RotateCcw, Search, Settings, ShieldCheck, Sparkles, UserRound, X, Zap } from 'lucide-react'
 import Globe from './Globe'
 import { SectionView, type DashboardSection } from './Sections'
 import { fetchDashboardData, type DashboardData } from './api'
