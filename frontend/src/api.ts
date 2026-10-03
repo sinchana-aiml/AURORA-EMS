@@ -1,4 +1,5 @@
 import type { BackendTwinTelemetry, DashboardPayload, TwinTelemetry } from './types'
+import demoDashboardJson from './demo-dashboard.json'
 
 const toTwinTelemetry = (telemetry: BackendTwinTelemetry): TwinTelemetry => ({
   timestamp: telemetry.timestamp,
@@ -18,6 +19,15 @@ const toTwinTelemetry = (telemetry: BackendTwinTelemetry): TwinTelemetry => ({
 })
 
 export type DashboardData = DashboardPayload & { currentTelemetry: TwinTelemetry; telemetryHistory: TwinTelemetry[] }
+
+export function getDemoDashboardData(): DashboardData {
+  const payload = demoDashboardJson as unknown as DashboardPayload
+  return {
+    ...payload,
+    currentTelemetry: toTwinTelemetry(payload.telemetry.latest),
+    telemetryHistory: payload.telemetry.history.map(toTwinTelemetry),
+  }
+}
 
 export async function fetchDashboardData(scenario = 'normal', horizonHours = 24): Promise<DashboardData> {
   const response = await fetch(`/api/dashboard?scenario=${encodeURIComponent(scenario)}&horizon_hours=${horizonHours}`)
