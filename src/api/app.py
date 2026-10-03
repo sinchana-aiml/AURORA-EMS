@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+except ImportError:
+    pass
 
 from flask import Flask, jsonify, request, send_from_directory
 
 from .dashboard_service import build_dashboard_payload
+from .chat_service import answer_chat
 
 
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
@@ -18,6 +26,28 @@ def create_app() -> Flask:
     @app.get("/api/health")
     def health() -> tuple[object, int]:
         return jsonify({"status": "ok"}), 200
+
+    @app.post("/api/chat")
+    def chat() -> tuple[object, int]:
+        body = request.get_json(silent=True) or {}
+        message = str(body.get("message", "")).strip()
+        if not message:
+            return jsonify({"error": "message is required"}), 400
+        if len(message) > 1000:
+            return jsonify({"error": "message too long (max 1000 chars)"}), 400
+        history = body.get("history", [])
+        if not isinstance(history, list):
+            history = []
+        history = history[-8:]  # limit history
+        try:
+            dashboard_data = build_dashboard_payload(scenario="normal", horizon_hours=24)
+        except Exception:
+            dashboard_data = {}
+        try:
+            result = answer_chat(message, history, dashboard_data)
+            return jsonify(result), 200
+        except Exception as error:
+            return jsonify({"error": f"Chat service error: {error}"}), 500
 
     @app.get("/api/dashboard")
     def dashboard() -> tuple[object, int]:
